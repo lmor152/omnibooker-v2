@@ -1,0 +1,12 @@
+[project]
+name = "omnibooker"
+version = "0.1.0"
+description = "Unified toolkit for the Omnibooker monorepo"
+requires-python = ">=3.11"
+
+
+[tool.uv.workspace]
+members = [
+  "applications/backend",
+  "applications/worker"
+]

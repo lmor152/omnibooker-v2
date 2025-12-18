@@ -1,0 +1,1 @@
+"""Clubspark integration primitives."""
