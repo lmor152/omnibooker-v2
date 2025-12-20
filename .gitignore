@@ -19,6 +19,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+# Allow the frontend source directory to be versioned
+!applications/frontend/src/lib/
 lib64/
 parts/
 sdist/
