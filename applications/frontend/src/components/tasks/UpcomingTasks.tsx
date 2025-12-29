@@ -8,6 +8,7 @@ import {
   CalendarSync,
   CalendarX2,
   Clock,
+  Globe,
   XCircle,
   CheckCircle,
   AlertCircle,
@@ -476,6 +477,8 @@ function TaskCard({
 
   const StateIcon = stateIconMap[task.status] || CalendarClock;
 
+  const timezoneDisplay = slot?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const datePart = new Intl.DateTimeFormat("en-GB", {
@@ -557,6 +560,10 @@ function TaskCard({
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <span>Target: {formatDate(task.scheduledDate)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Globe className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <span>Timezone: {timezoneDisplay}</span>
         </div>
       </div>
 
