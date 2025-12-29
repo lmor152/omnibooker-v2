@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Calendar, Home, ListTodo, Settings as SettingsIcon, LogOut, RefreshCw } from "lucide-react";
 import type {
   BookingSlot,
   BookingSlotInput,
@@ -7,14 +8,11 @@ import type {
   ProviderInput,
   User,
 } from "../types";
-import { Button } from "./ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Calendar, LogOut, Settings, Clock, ListChecks, RefreshCw } from "lucide-react";
-import { ProvidersTab } from "./ProvidersTab";
-import { BookingSlotsTab } from "./BookingSlotsTab";
-import { BookingTasksTab } from "./BookingTasksTab";
-import { Alert, AlertDescription } from "./ui/alert";
+import { ProviderManager } from "./providers/ProviderManager";
+import { SessionManager } from "./sessions/SessionManager";
+import { UpcomingTasks } from "./tasks/UpcomingTasks";
 import * as api from "../lib/api";
+import { Alert, AlertDescription } from "./ui/alert";
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unexpected error");
 
@@ -22,9 +20,13 @@ interface DashboardProps {
   user: User;
   getAccessToken: () => Promise<string>;
   onLogout: () => void;
+  onNavigateToHome: () => void;
 }
 
-export function Dashboard({ user, getAccessToken, onLogout }: DashboardProps) {
+type DashboardTab = "tasks" | "sessions" | "providers";
+
+export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: DashboardProps) {
+  const [activeTab, setActiveTab] = useState<DashboardTab>("tasks");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [bookingSlots, setBookingSlots] = useState<BookingSlot[]>([]);
   const [bookingTasks, setBookingTasks] = useState<BookingTask[]>([]);
@@ -80,11 +82,25 @@ export function Dashboard({ user, getAccessToken, onLogout }: DashboardProps) {
     }
   }, [getAccessToken]);
 
+  // Provider handlers
   const handleAddProvider = async (provider: ProviderInput) => {
     try {
       const token = await getAccessToken();
       const created = await api.createProvider(token, provider);
       setProviders((prev) => [...prev, created]);
+      setError(null);
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleUpdateProvider = async (id: number, updates: Partial<ProviderInput>) => {
+    try {
+      const token = await getAccessToken();
+      const updated = await api.updateProvider(token, id, updates);
+      setProviders((prev) => prev.map((provider) => (provider.id === id ? updated : provider)));
       setError(null);
     } catch (err) {
       const message = getErrorMessage(err);
@@ -111,19 +127,7 @@ export function Dashboard({ user, getAccessToken, onLogout }: DashboardProps) {
     }
   };
 
-  const handleUpdateProvider = async (id: number, updates: Partial<ProviderInput>) => {
-    try {
-      const token = await getAccessToken();
-      const updated = await api.updateProvider(token, id, updates);
-      setProviders((prev) => prev.map((provider) => (provider.id === id ? updated : provider)));
-      setError(null);
-    } catch (err) {
-      const message = getErrorMessage(err);
-      setError(message);
-      throw err;
-    }
-  };
-
+  // Booking Slot handlers
   const handleAddSlot = async (slot: BookingSlotInput) => {
     try {
       const token = await getAccessToken();
@@ -166,6 +170,20 @@ export function Dashboard({ user, getAccessToken, onLogout }: DashboardProps) {
     }
   };
 
+  const handleResyncSlot = async (id: number) => {
+    try {
+      const token = await getAccessToken();
+      await api.resyncBookingSlot(token, id);
+      await refreshTasks();
+      setError(null);
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setError(message);
+      throw err;
+    }
+  };
+
+  // Booking Task handlers
   const handleCancelTask = async (taskId: number) => {
     try {
       const token = await getAccessToken();
@@ -205,96 +223,220 @@ export function Dashboard({ user, getAccessToken, onLogout }: DashboardProps) {
     }
   };
 
+  const handleExecuteTask = async (taskId: number) => {
+    try {
+      const token = await getAccessToken();
+      const updated = await api.executeBookingTask(token, taskId);
+      setBookingTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      setError(null);
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setError(message);
+      throw err;
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Loading your data...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white to-green-50/30">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your data...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+    <div className="min-h-screen flex flex-col bg-[#FAFAF8]">
+      {/* Header */}
+      <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onNavigateToHome}
+              className="flex items-center gap-3 -m-1 p-1 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors hover:text-green-700"
+              aria-label="Return to home"
+            >
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl overflow-hidden border border-green-100 shadow-sm transform -rotate-3 bg-white flex items-center justify-center">
+                <img src="/favicon.png" alt="Bookie Monster" className="w-7 h-7 sm:w-9 sm:h-9 object-contain" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-green-700 text-xl sm:text-2xl font-bold">Bookie Monster</h1>
+              </div>
+            </button>
             <div className="flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-blue-600" />
-              <h1 className="text-xl">Omnibooker</h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={() => fetchAll({ background: true }).catch(() => null)}
                 disabled={isRefreshing}
+                className="p-2 text-gray-700 hover:text-green-600 transition-colors disabled:opacity-50"
+                title="Refresh"
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-              <span className="text-sm text-gray-600 hidden sm:block">{user.email}</span>
-              <Button variant="outline" size="sm" onClick={onLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign out
-              </Button>
+                <RefreshCw className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} />
+              </button>
+              <button
+                onClick={onNavigateToHome}
+                className="hidden sm:flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-green-600 transition-colors"
+              >
+                <Home className="w-5 h-5" />
+                <span>Home</span>
+              </button>
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-red-600 transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Mobile Tab Navigation */}
+      <div className="lg:hidden border-b border-gray-200 bg-white sticky top-[73px] sm:top-[81px] z-40">
+        <div className="flex">
+          <TabButton
+            active={activeTab === "tasks"}
+            onClick={() => setActiveTab("tasks")}
+            icon={<ListTodo className="w-5 h-5" />}
+            label="Tasks"
+          />
+          <TabButton
+            active={activeTab === "sessions"}
+            onClick={() => setActiveTab("sessions")}
+            icon={<Calendar className="w-5 h-5" />}
+            label="Sessions"
+          />
+          <TabButton
+            active={activeTab === "providers"}
+            onClick={() => setActiveTab("providers")}
+            icon={<SettingsIcon className="w-5 h-5" />}
+            label="Providers"
+          />
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-  <Tabs defaultValue="tasks" className="space-y-6">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3">
-            <TabsTrigger value="tasks">
-              <ListChecks className="w-4 h-4 mr-2" />
-              Booking Tasks
-            </TabsTrigger>
-            <TabsTrigger value="bookings">
-              <Clock className="w-4 h-4 mr-2" />
-              Booking Slots
-            </TabsTrigger>
-            <TabsTrigger value="providers">
-              <Settings className="w-4 h-4 mr-2" />
-              Providers
-            </TabsTrigger>
-          </TabsList>
 
-          <TabsContent value="tasks">
-            <BookingTasksTab
-              bookingTasks={bookingTasks}
-              bookingSlots={bookingSlots}
-              providers={providers}
-              onCancelTask={handleCancelTask}
-              onReactivateTask={handleReactivateTask}
-              onDeleteTask={handleDeleteTask}
-            />
-          </TabsContent>
+        <div className="lg:grid lg:grid-cols-12 lg:gap-8">
+          {/* Desktop Sidebar */}
+          <aside className="hidden lg:block lg:col-span-3">
+            <nav className="space-y-2 sticky top-24">
+              <SidebarButton
+                active={activeTab === "tasks"}
+                onClick={() => setActiveTab("tasks")}
+                icon={<ListTodo className="w-5 h-5" />}
+                label="Upcoming Tasks"
+              />
+              <SidebarButton
+                active={activeTab === "sessions"}
+                onClick={() => setActiveTab("sessions")}
+                icon={<Calendar className="w-5 h-5" />}
+                label="Booking Sessions"
+              />
+              <SidebarButton
+                active={activeTab === "providers"}
+                onClick={() => setActiveTab("providers")}
+                icon={<SettingsIcon className="w-5 h-5" />}
+                label="Providers"
+              />
+            </nav>
+          </aside>
 
-          <TabsContent value="bookings">
-            <BookingSlotsTab
-              bookingSlots={bookingSlots}
-              providers={providers}
-              onAddSlot={handleAddSlot}
-              onUpdateSlot={handleUpdateSlot}
-              onDeleteSlot={handleDeleteSlot}
-            />
-          </TabsContent>
-
-          <TabsContent value="providers">
-            <ProvidersTab
-              providers={providers}
-              onAddProvider={handleAddProvider}
-              onUpdateProvider={handleUpdateProvider}
-              onDeleteProvider={handleDeleteProvider}
-            />
-          </TabsContent>
-        </Tabs>
-      </main>
+          {/* Main Content Area */}
+          <main className="lg:col-span-9">
+            {activeTab === "tasks" && (
+              <UpcomingTasks
+                bookingTasks={bookingTasks}
+                bookingSlots={bookingSlots}
+                providers={providers}
+                onCancelTask={handleCancelTask}
+                onReactivateTask={handleReactivateTask}
+                onDeleteTask={handleDeleteTask}
+                onExecuteTask={handleExecuteTask}
+              />
+            )}
+            {activeTab === "sessions" && (
+              <SessionManager
+                bookingSlots={bookingSlots}
+                providers={providers}
+                onAddSlot={handleAddSlot}
+                onUpdateSlot={handleUpdateSlot}
+                onDeleteSlot={handleDeleteSlot}
+                onResyncSlot={handleResyncSlot}
+              />
+            )}
+            {activeTab === "providers" && (
+              <ProviderManager
+                providers={providers}
+                onAddProvider={handleAddProvider}
+                onUpdateProvider={handleUpdateProvider}
+                onDeleteProvider={handleDeleteProvider}
+              />
+            )}
+          </main>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function SidebarButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+        active
+          ? "bg-green-50 text-green-700 font-medium"
+          : "text-gray-700 hover:bg-gray-50"
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-4 py-3 transition-colors ${
+        active
+          ? "bg-green-50 text-green-700 font-medium border-b-2 border-green-600"
+          : "text-gray-700 hover:bg-gray-50"
+      }`}
+    >
+      {icon}
+      <span className="text-xs sm:text-sm">{label}</span>
+    </button>
   );
 }
