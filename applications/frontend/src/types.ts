@@ -11,6 +11,7 @@ export interface ProviderCredentials {
   password: string;
   additionalInfo?: string;
   cardDetails?: PaymentCardDetails;
+  cardCvc?: string;
 }
 
 export interface User {
@@ -41,10 +42,20 @@ export interface ClubsparkOptions {
   courtSlug?: string;
   doubleSession?: boolean;
   targetTimes?: string[];
-  targetCourts?: number[];
+  targetCourts?: (number | string)[];
 }
 
-export type ProviderOptions = ClubsparkOptions & Record<string, string | number | boolean | null | string[] | number[]>;
+export interface BetterOptions {
+  venueSlug?: string;
+  activitySlug?: string;
+  useCredits?: boolean;
+  targetTimes?: string[];
+  targetCourts?: (string | number)[];
+}
+
+export type ProviderOptions = ClubsparkOptions &
+  BetterOptions &
+  Record<string, string | number | boolean | null | string[] | number[]>;
 
 export interface BookingSlot {
   id: number;

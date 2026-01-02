@@ -1,41 +1,165 @@
 import { useCallback, useEffect, useState } from "react";
-import { Calendar, Home, ListTodo, Settings as SettingsIcon, LogOut, RefreshCw } from "lucide-react";
+import { Calendar, Home, ListTodo, Settings as SettingsIcon, LogOut, LogIn, RefreshCw, BookOpen } from "lucide-react";
 import type {
   BookingSlot,
   BookingSlotInput,
   BookingTask,
   Provider,
   ProviderInput,
-  User,
 } from "../types";
 import { ProviderManager } from "./providers/ProviderManager";
 import { SessionManager } from "./sessions/SessionManager";
 import { UpcomingTasks } from "./tasks/UpcomingTasks";
+import { GuidesTab } from "./guides/GuidesTab";
 import * as api from "../lib/api";
 import { Alert, AlertDescription } from "./ui/alert";
+
+const AUTH_REQUIRED_MESSAGE = "Please log in to manage your bookings.";
+const DEMO_PROVIDERS: Provider[] = [
+  {
+    id: 1001,
+    name: "Clubspark Tennis",
+    type: "Clubspark",
+    credentials: {
+      username: "clubspark@example.com",
+      password: "••••••••",
+      additionalInfo: "",
+      cardDetails: {
+        cardNumber: "•••• 6767",
+        expiryDate: "08/27",
+        cvc: "***",
+      },
+    },
+    createdAt: "2024-05-20T09:00:00.000Z",
+  },
+  {
+    id: 1002,
+    name: "Better Gym Islington",
+    type: "Better",
+    credentials: {
+      username: "better@example.com",
+      password: "••••••••",
+      additionalInfo: "Auto-uses class credits",
+    },
+    createdAt: "2024-05-22T12:00:00.000Z",
+  },
+];
+
+const DEMO_BOOKING_SLOTS: BookingSlot[] = [
+  {
+    id: 2001,
+    providerId: 1001,
+    name: "Monday Evening Tennis",
+    frequency: "weekly",
+    dayOfWeek: 1,
+    time: "20:00",
+    timezone: "Europe/London",
+    isActive: true,
+    durationMinutes: 60,
+    facility: "Finsbury Park Courts",
+    attemptStrategy: "release",
+    attemptOffsetDays: 0,
+    attemptOffsetHours: 0,
+    attemptOffsetMinutes: 5,
+    releaseDaysBefore: 7,
+    releaseTime: "07:00",
+    providerOptions: {
+      courtSlug: "finsburypark",
+      targetTimes: ["20:00"],
+    },
+    createdAt: "2024-06-01T08:00:00.000Z",
+  },
+  {
+    id: 2002,
+    providerId: 1002,
+    name: "Wednesday Strength Class",
+    frequency: "weekly",
+    dayOfWeek: 3,
+    time: "18:30",
+    timezone: "Europe/London",
+    isActive: true,
+    durationMinutes: 45,
+    facility: "Better Gym Studio 2",
+    attemptStrategy: "offset",
+    attemptOffsetDays: 0,
+    attemptOffsetHours: 2,
+    attemptOffsetMinutes: 0,
+    releaseDaysBefore: 0,
+    releaseTime: null,
+    providerOptions: {
+      activitySlug: "strength-conditioning",
+      useCredits: true,
+    },
+    createdAt: "2024-06-03T10:30:00.000Z",
+  },
+];
+
+const DEMO_BOOKING_TASKS: BookingTask[] = [
+  {
+    id: 3001,
+    bookingSlotId: 2001,
+    scheduledDate: "2024-06-17T20:00:00.000Z",
+    attemptAt: "2024-06-10T07:00:05.000Z",
+    status: "pending",
+    createdAt: "2024-06-03T10:31:00.000Z",
+  },
+  {
+    id: 3002,
+    bookingSlotId: 2001,
+    scheduledDate: "2024-06-10T20:00:00.000Z",
+    attemptAt: "2024-06-03T07:00:08.000Z",
+    status: "success",
+    attemptedAt: "2024-06-03T07:00:12.000Z",
+    createdAt: "2024-06-01T09:00:00.000Z",
+  },
+  {
+    id: 3003,
+    bookingSlotId: 2002,
+    scheduledDate: "2024-06-12T18:30:00.000Z",
+    attemptAt: "2024-06-12T16:30:00.000Z",
+    status: "failed",
+    errorMessage: "No spots available at release",
+    attemptedAt: "2024-06-12T16:30:12.000Z",
+    createdAt: "2024-06-05T12:00:00.000Z",
+  },
+  {
+    id: 3004,
+    bookingSlotId: 2002,
+    scheduledDate: "2024-06-19T18:30:00.000Z",
+    attemptAt: "2024-06-19T16:30:00.000Z",
+    status: "pending",
+    createdAt: "2024-06-10T11:00:00.000Z",
+  },
+];
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unexpected error");
 
 interface DashboardProps {
-  user: User;
+  isAuthenticated: boolean;
   getAccessToken: () => Promise<string>;
+  onLogin: () => void;
   onLogout: () => void;
   onNavigateToHome: () => void;
 }
 
-type DashboardTab = "tasks" | "sessions" | "providers";
+type DashboardTab = "tasks" | "sessions" | "providers" | "guides";
 
-export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: DashboardProps) {
+export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, onNavigateToHome }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>("tasks");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [bookingSlots, setBookingSlots] = useState<BookingSlot[]>([]);
   const [bookingTasks, setBookingTasks] = useState<BookingTask[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(isAuthenticated);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAll = useCallback(
     async ({ background = false }: { background?: boolean } = {}) => {
+      if (!isAuthenticated) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
       if (background) {
         setIsRefreshing(true);
       } else {
@@ -64,14 +188,34 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
         }
       }
     },
-    [getAccessToken],
+    [getAccessToken, isAuthenticated],
   );
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setProviders(DEMO_PROVIDERS);
+      setBookingSlots(DEMO_BOOKING_SLOTS);
+      setBookingTasks(DEMO_BOOKING_TASKS);
+      setError(null);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
     fetchAll().catch(() => null);
-  }, [fetchAll]);
+  }, [fetchAll, isAuthenticated]);
+
+  const ensureAuthenticated = useCallback(() => {
+    if (!isAuthenticated) {
+      setError(AUTH_REQUIRED_MESSAGE);
+      return false;
+    }
+    return true;
+  }, [isAuthenticated]);
 
   const refreshTasks = useCallback(async () => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const tasks = await api.fetchBookingTasks(token);
@@ -80,10 +224,13 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
       setError(getErrorMessage(err));
       throw err;
     }
-  }, [getAccessToken]);
+  }, [ensureAuthenticated, getAccessToken]);
 
   // Provider handlers
   const handleAddProvider = async (provider: ProviderInput) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const created = await api.createProvider(token, provider);
@@ -97,6 +244,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleUpdateProvider = async (id: number, updates: Partial<ProviderInput>) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const updated = await api.updateProvider(token, id, updates);
@@ -110,6 +260,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleDeleteProvider = async (id: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       await api.deleteProvider(token, id);
@@ -129,6 +282,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
 
   // Booking Slot handlers
   const handleAddSlot = async (slot: BookingSlotInput) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const created = await api.createBookingSlot(token, slot);
@@ -143,6 +299,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleUpdateSlot = async (id: number, updates: Partial<BookingSlotInput>) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const updated = await api.updateBookingSlot(token, id, updates);
@@ -157,6 +316,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleDeleteSlot = async (id: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       await api.deleteBookingSlot(token, id);
@@ -171,6 +333,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleResyncSlot = async (id: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       await api.resyncBookingSlot(token, id);
@@ -185,6 +350,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
 
   // Booking Task handlers
   const handleCancelTask = async (taskId: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const updated = await api.cancelBookingTask(token, taskId);
@@ -198,6 +366,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleReactivateTask = async (taskId: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const updated = await api.reactivateBookingTask(token, taskId);
@@ -211,6 +382,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleDeleteTask = async (taskId: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       await api.deleteBookingTask(token, taskId);
@@ -224,6 +398,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
   };
 
   const handleExecuteTask = async (taskId: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
     try {
       const token = await getAccessToken();
       const updated = await api.executeBookingTask(token, taskId);
@@ -269,9 +446,9 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => fetchAll({ background: true }).catch(() => null)}
-                disabled={isRefreshing}
+                disabled={isRefreshing || !isAuthenticated}
                 className="p-2 text-gray-700 hover:text-green-600 transition-colors disabled:opacity-50"
-                title="Refresh"
+                title={isAuthenticated ? "Refresh" : "Log in to refresh"}
               >
                 <RefreshCw className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} />
               </button>
@@ -283,11 +460,13 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
                 <span>Home</span>
               </button>
               <button
-                onClick={onLogout}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-red-600 transition-colors"
+                onClick={isAuthenticated ? onLogout : onLogin}
+                className={`flex items-center gap-2 px-4 py-2 text-gray-700 transition-colors ${
+                  isAuthenticated ? "hover:text-red-600" : "hover:text-green-600"
+                }`}
               >
-                <LogOut className="w-5 h-5" />
-                <span className="hidden sm:inline">Logout</span>
+                {isAuthenticated ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+                <span className="hidden sm:inline">{isAuthenticated ? "Logout" : "Log in"}</span>
               </button>
             </div>
           </div>
@@ -315,6 +494,12 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
             icon={<SettingsIcon className="w-5 h-5" />}
             label="Providers"
           />
+          <TabButton
+            active={activeTab === "guides"}
+            onClick={() => setActiveTab("guides")}
+            icon={<BookOpen className="w-5 h-5" />}
+            label="Guides"
+          />
         </div>
       </div>
 
@@ -323,6 +508,13 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {!isAuthenticated && (
+          <Alert className="mb-6">
+            <AlertDescription>
+              This is a preview of your dashboard. Log in to load real providers, sessions, and tasks.
+            </AlertDescription>
           </Alert>
         )}
 
@@ -347,6 +539,12 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
                 onClick={() => setActiveTab("providers")}
                 icon={<SettingsIcon className="w-5 h-5" />}
                 label="Providers"
+              />
+              <SidebarButton
+                active={activeTab === "guides"}
+                onClick={() => setActiveTab("guides")}
+                icon={<BookOpen className="w-5 h-5" />}
+                label="Guides"
               />
             </nav>
           </aside>
@@ -382,6 +580,7 @@ export function Dashboard({ user, getAccessToken, onLogout, onNavigateToHome }: 
                 onDeleteProvider={handleDeleteProvider}
               />
             )}
+            {activeTab === "guides" && <GuidesTab />}
           </main>
         </div>
       </div>

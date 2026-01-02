@@ -183,6 +183,19 @@ function ProviderCard({
                 <span>Card details configured</span>
               </div>
             )}
+            {provider.credentials.cardCvc && (
+              <div className="flex items-center gap-1 text-purple-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 11V7m0 8h.01M5 21h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"
+                  />
+                </svg>
+                <span>Card security code stored</span>
+              </div>
+            )}
           </div>
         </div>
 

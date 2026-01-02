@@ -46,18 +46,10 @@ export default function App() {
     });
   }, [getAccessTokenSilently]);
 
-  // Auto-redirect to login if not authenticated
-  useEffect(() => {
-    if (authLoading || isAuthenticated || redirecting) {
+  const handleLogin = useCallback(() => {
+    if (redirecting) {
       return;
     }
-
-    const search = window.location.search;
-    const hasAuthParams = /code=|error=/.test(search);
-    if (hasAuthParams) {
-      return;
-    }
-
     setRedirecting(true);
     loginWithRedirect({
       authorizationParams: {
@@ -70,7 +62,7 @@ export default function App() {
       setUserError(error instanceof Error ? error.message : "Unable to sign in");
       setRedirecting(false);
     });
-  }, [authLoading, isAuthenticated, loginWithRedirect, redirecting]);
+  }, [loginWithRedirect, redirecting]);
 
   // Fetch user profile when authenticated
   useEffect(() => {
@@ -220,18 +212,23 @@ export default function App() {
   }
 
   // Show appropriate view based on currentView state
-  if (!isAuthenticated || !user) {
-    return <HomePage onNavigateToDashboard={handleNavigateToDashboard} userName={displayName} />;
-  }
-
   if (currentView === "home") {
-    return <HomePage onNavigateToDashboard={handleNavigateToDashboard} userName={displayName} />;
+    return (
+      <HomePage
+        isAuthenticated={Boolean(isAuthenticated && user)}
+        onLogout={handleLogout}
+        onLogin={handleLogin}
+        onNavigateToDashboard={handleNavigateToDashboard}
+        userName={displayName}
+      />
+    );
   }
 
   return (
     <Dashboard
-      user={user}
+      isAuthenticated={Boolean(isAuthenticated && user)}
       getAccessToken={getApiToken}
+      onLogin={handleLogin}
       onLogout={handleLogout}
       onNavigateToHome={handleNavigateToHome}
     />

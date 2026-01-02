@@ -43,6 +43,7 @@ class ProviderCredentials(BaseModel):
     password: str
     additionalInfo: Optional[str] = None
     cardDetails: Optional[PaymentCardDetails] = None
+    cardCvc: Optional[str] = Field(None, min_length=3, max_length=4)
 
 
 class ProviderBase(BaseModel):

@@ -45,6 +45,11 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
   const [clubDoubleSession, setClubDoubleSession] = useState(false);
   const [clubTargetTimes, setClubTargetTimes] = useState<string[]>([]);
   const [clubTargetCourts, setClubTargetCourts] = useState<string[]>([]);
+  const [betterVenueSlug, setBetterVenueSlug] = useState("");
+  const [betterActivitySlug, setBetterActivitySlug] = useState("");
+  const [betterUseCredits, setBetterUseCredits] = useState(true);
+  const [betterTargetTimes, setBetterTargetTimes] = useState<string[]>([]);
+  const [betterTargetCourts, setBetterTargetCourts] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,12 +83,28 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
           ? (opts as any).targetCourts.map((c: number | string) => String(c))
           : []
       );
+      setBetterVenueSlug((opts as any).venueSlug ?? "");
+      setBetterActivitySlug((opts as any).activitySlug ?? "");
+      setBetterUseCredits((opts as any).useCredits ?? true);
+      setBetterTargetTimes(
+        Array.isArray((opts as any).targetTimes) ? (opts as any).targetTimes : []
+      );
+      setBetterTargetCourts(
+        Array.isArray((opts as any).targetCourts)
+          ? (opts as any).targetCourts.map((c: string | number) => String(c))
+          : []
+      );
     } else {
       setForm(defaultSlotValues);
       setClubCourtSlug("");
       setClubDoubleSession(false);
       setClubTargetTimes([]);
       setClubTargetCourts([]);
+      setBetterVenueSlug("");
+      setBetterActivitySlug("");
+      setBetterUseCredits(true);
+      setBetterTargetTimes([]);
+      setBetterTargetCourts([]);
     }
   }, [slot]);
 
@@ -107,6 +128,14 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
     return { value: String(n) } as const;
   };
 
+  const handleAddBetterCourt = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return { error: "Enter a court keyword" } as const;
+    }
+    return { value: trimmed } as const;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.providerId) return;
@@ -120,10 +149,26 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
         .map((c) => Number(c))
         .filter((n) => !Number.isNaN(n) && n > 0);
       if (parsedCourts.length) providerOptions.targetCourts = parsedCourts;
+    } else if (selectedProvider?.type === "Better") {
+      if (betterVenueSlug) providerOptions.venueSlug = betterVenueSlug.trim();
+      if (betterActivitySlug) providerOptions.activitySlug = betterActivitySlug.trim();
+      providerOptions.useCredits = betterUseCredits;
+      if (betterTargetTimes.length) providerOptions.targetTimes = betterTargetTimes;
+      const betterCourts = betterTargetCourts
+        .map((c) => c.trim())
+        .filter((value) => value.length > 0);
+      if (betterCourts.length) providerOptions.targetCourts = betterCourts;
     }
 
-    const bookingTime =
-      (selectedProvider?.type === "Clubspark" && clubTargetTimes[0]) || form.time || "09:00";
+    const bookingTime = (() => {
+      if (selectedProvider?.type === "Clubspark") {
+        return clubTargetTimes[0] || form.time || "09:00";
+      }
+      if (selectedProvider?.type === "Better") {
+        return betterTargetTimes[0] || form.time || "09:00";
+      }
+      return form.time || "09:00";
+    })();
 
     const payload: BookingSlotInput = {
       ...form,
@@ -480,6 +525,77 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
                   placeholder="Court #"
                   note="Order matters; first choice first."
                   onAddAttempt={handleAddTargetCourt}
+                  onError={setError}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Better Options */}
+          {selectedProvider?.type === "Better" && (
+            <div className="border-t border-gray-200 pt-6 space-y-4">
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-1">Provider Options (Better)</h4>
+                <p className="text-sm text-gray-500">
+                  Specify the venue + activity slugs from Better along with your preferred courts and times.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Venue Slug <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={betterVenueSlug}
+                  onChange={(e) => setBetterVenueSlug(e.target.value)}
+                  placeholder="e.g., islington-tennis-centre"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Activity Slug <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={betterActivitySlug}
+                  onChange={(e) => setBetterActivitySlug(e.target.value)}
+                  placeholder="e.g., highbury-tennis"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <label htmlFor="better-credits" className="text-sm font-medium text-gray-700">
+                  Use available credits before charging card
+                </label>
+                <Switch id="better-credits" checked={betterUseCredits} onCheckedChange={setBetterUseCredits} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Target Times</label>
+                <ChipsList
+                  items={betterTargetTimes}
+                  onChange={setBetterTargetTimes}
+                  placeholder="HH:MM"
+                  note="Optional. Ordered preferences."
+                  onAddAttempt={handleAddTargetTime}
+                  onError={setError}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Target Courts</label>
+                <ChipsList
+                  items={betterTargetCourts}
+                  onChange={setBetterTargetCourts}
+                  placeholder="Court name or number"
+                  note="Matches by keyword, e.g., '1' or 'Court 1'."
+                  onAddAttempt={handleAddBetterCourt}
                   onError={setError}
                 />
               </div>

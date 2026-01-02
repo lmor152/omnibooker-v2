@@ -16,14 +16,20 @@ const defaultProvider: ProviderInput = {
     password: "",
     additionalInfo: "",
     cardDetails: undefined,
+    cardCvc: undefined,
   },
 };
 
 // Providers that require card details for booking
 const PROVIDERS_REQUIRING_CARD_DETAILS: ProviderType[] = ["Clubspark"];
+const PROVIDERS_REQUIRING_CVC: ProviderType[] = ["Better"];
 
 const requiresCardDetails = (providerType: ProviderType): boolean => {
   return PROVIDERS_REQUIRING_CARD_DETAILS.includes(providerType);
+};
+
+const requiresCardCvc = (providerType: ProviderType): boolean => {
+  return PROVIDERS_REQUIRING_CVC.includes(providerType);
 };
 
 export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps) {
@@ -47,6 +53,7 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
                 cvc: provider.credentials.cardDetails.cvc,
               }
             : undefined,
+          cardCvc: provider.credentials.cardCvc ?? "",
         },
       });
     } else {
@@ -57,6 +64,7 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
           cardDetails: requiresCardDetails(defaultProvider.type)
             ? { cardNumber: "", expiryDate: "", cvc: "" }
             : undefined,
+          cardCvc: requiresCardCvc(defaultProvider.type) ? "" : undefined,
         },
       });
     }
@@ -81,6 +89,9 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
             form.credentials.cardDetails.cvc
               ? form.credentials.cardDetails
               : undefined,
+          cardCvc: form.credentials.cardCvc?.trim()
+            ? form.credentials.cardCvc.trim()
+            : undefined,
         },
       });
     } catch (err) {
@@ -98,6 +109,9 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
         ...prev.credentials,
         cardDetails: requiresCardDetails(newType)
           ? prev.credentials.cardDetails || { cardNumber: "", expiryDate: "", cvc: "" }
+          : undefined,
+        cardCvc: requiresCardCvc(newType)
+          ? prev.credentials.cardCvc || ""
           : undefined,
       },
     }));
@@ -209,6 +223,40 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
             />
           </div>
+
+          {/* Card CVC Section - e.g. Better */}
+          {requiresCardCvc(form.type) && (
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center gap-2 mb-4">
+                <CreditCard className="w-5 h-5 text-gray-600" />
+                <h4 className="font-semibold text-gray-800">Stored Card Verification</h4>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Better only needs the security code for the card already saved in your account.
+                This is used at booking time to re-verify the card with Opayo.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Card Security Code (CVC) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={form.credentials.cardCvc ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, "");
+                    setForm((prev) => ({
+                      ...prev,
+                      credentials: { ...prev.credentials, cardCvc: value.slice(0, 4) },
+                    }));
+                  }}
+                  placeholder="123"
+                  maxLength={4}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
+              </div>
+            </div>
+          )}
 
           {/* Card Details Section - Conditional based on provider type */}
           {requiresCardDetails(form.type) && (

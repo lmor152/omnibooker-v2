@@ -18,3 +18,4 @@ registrations performed at import time will be available to the worker.
 from importlib import import_module
 
 import_module(f"{__name__}.clubspark")
+import_module(f"{__name__}.better")

@@ -2,12 +2,17 @@ import { Calendar, CalendarCheck, CalendarCog, CalendarSync, CheckCircle } from 
 
 interface HomePageProps {
   onNavigateToDashboard: () => void;
+  onLogin: () => void;
+  onLogout: () => void;
+  isAuthenticated: boolean;
   userName?: string;
 }
 
-export function HomePage({ onNavigateToDashboard, userName }: HomePageProps) {
+export function HomePage({ onNavigateToDashboard, onLogin, onLogout, isAuthenticated, userName }: HomePageProps) {
   const displayName = userName?.trim();
   const userInitial = displayName?.charAt(0)?.toUpperCase();
+  const accountButtonLabel = isAuthenticated ? "Logout" : "Log in";
+  const accountButtonAction = isAuthenticated ? onLogout : onLogin;
 
   return (
     <div className="min-h-screen">
@@ -34,6 +39,12 @@ export function HomePage({ onNavigateToDashboard, userName }: HomePageProps) {
                 </div>
               )}
               <button
+                onClick={accountButtonAction}
+                className="px-4 py-2 border border-gray-200 rounded-full bg-white text-gray-700 hover:border-green-500 hover:text-green-700 transition-colors"
+              >
+                {accountButtonLabel}
+              </button>
+              <button
                 onClick={onNavigateToDashboard}
                 className="px-6 py-2.5 bg-green-600 text-white rounded-full hover:bg-green-700 transition-colors"
               >
@@ -56,7 +67,7 @@ export function HomePage({ onNavigateToDashboard, userName }: HomePageProps) {
                 Never Miss a Booking Again
               </h2>
               <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto lg:mx-0">
-                Bookie Monster automatically books your favorite recurring sessions—tennis courts,
+                Bookie Monster automatically books your favourite recurring sessions: tennis courts,
                 gym classes, and more. Set it once, and let the monster handle the rest!
               </p>
               <div className="flex justify-center lg:justify-start">
@@ -128,7 +139,7 @@ export function HomePage({ onNavigateToDashboard, userName }: HomePageProps) {
               <div className="space-y-4">
                 <BenefitItem
                   icon={<CheckCircle className="w-6 h-6 text-green-600" />}
-                  text="Never forget to book your favorite sessions"
+                  text="Never forget to book your favourite sessions"
                 />
                 <BenefitItem
                   icon={<CheckCircle className="w-6 h-6 text-green-600" />}
