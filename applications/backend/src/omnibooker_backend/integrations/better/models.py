@@ -104,7 +104,7 @@ class CreditResponse(BaseModel):
 
 class SavedCard(BaseModel):
     external_identifier: str
-    id: str
+    id: int
 
     model_config = ConfigDict(extra="ignore")
 

@@ -89,7 +89,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
 
     def get_cart(self) -> CartResponse:
         data = self._get("/activities/cart")
-        return CartResponse.model_validate(data)
+        return CartResponse.model_validate(data["data"])
 
     def clear_cart(self) -> CartResponse:
         cart = self.get_cart()
@@ -97,7 +97,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             return cart
         payload = {"cart_item_ids": [item.id for item in cart.items]}
         data = self._post("/activities/cart/remove", json=payload)
-        return CartResponse.model_validate(data)
+        return CartResponse.model_validate(data["data"])
 
     def add_slot_to_cart(self, slot: Slot) -> CartResponse:
         payload = {
@@ -114,7 +114,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             "selected_user_id": None,
         }
         data = self._post("/activities/cart/add", json=payload)
-        return CartResponse.model_validate(data)
+        return CartResponse.model_validate(data["data"])
 
     def apply_credits(self, amount: int) -> CreditResponse:
         payload = {
