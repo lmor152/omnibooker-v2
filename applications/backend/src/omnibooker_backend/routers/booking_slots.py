@@ -105,7 +105,7 @@ async def test_booking_slot(
     username = creds.get("username", "")
     password = creds.get("password", "")
     opts = test_in.provider_options
-    test_date = (date.today() + timedelta(days=7)).isoformat()
+    test_date = (date.today() + timedelta(days=1)).isoformat()
 
     if provider.type == "Better":
         venue_slug = str(opts.get("venueSlug", ""))
