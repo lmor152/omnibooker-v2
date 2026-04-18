@@ -280,6 +280,28 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
     }
   };
 
+  const handleTestProvider = async (payload: {
+    type: string;
+    credentials: { username: string; password: string };
+  }): Promise<{ success: boolean; message: string }> => {
+    if (!ensureAuthenticated()) {
+      throw new Error("Not authenticated");
+    }
+    const token = await getAccessToken();
+    return api.testProviderCredentials(token, payload);
+  };
+
+  const handleTestSlot = async (payload: {
+    providerId: number;
+    providerOptions: Record<string, unknown>;
+  }): Promise<{ success: boolean; message: string }> => {
+    if (!ensureAuthenticated()) {
+      throw new Error("Not authenticated");
+    }
+    const token = await getAccessToken();
+    return api.testBookingSlot(token, payload);
+  };
+
   // Booking Slot handlers
   const handleAddSlot = async (slot: BookingSlotInput) => {
     if (!ensureAuthenticated()) {
@@ -570,6 +592,7 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 onUpdateSlot={handleUpdateSlot}
                 onDeleteSlot={handleDeleteSlot}
                 onResyncSlot={handleResyncSlot}
+                onTestSlot={handleTestSlot}
               />
             )}
             {activeTab === "providers" && (
@@ -578,6 +601,7 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 onAddProvider={handleAddProvider}
                 onUpdateProvider={handleUpdateProvider}
                 onDeleteProvider={handleDeleteProvider}
+                onTestProvider={handleTestProvider}
               />
             )}
             {activeTab === "guides" && <GuidesTab />}

@@ -10,6 +10,10 @@ interface SessionManagerProps {
   onUpdateSlot: (id: number, updates: Partial<BookingSlotInput>) => Promise<void>;
   onDeleteSlot: (id: number) => Promise<void>;
   onResyncSlot: (id: number) => Promise<void>;
+  onTestSlot: (payload: {
+    providerId: number;
+    providerOptions: Record<string, unknown>;
+  }) => Promise<{ success: boolean; message: string }>;
 }
 
 export function SessionManager({
@@ -19,6 +23,7 @@ export function SessionManager({
   onUpdateSlot,
   onDeleteSlot,
   onResyncSlot,
+  onTestSlot,
 }: SessionManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<BookingSlot | null>(null);
@@ -166,6 +171,7 @@ export function SessionManager({
           providers={providers}
           onSave={handleSaveSession}
           onClose={() => setIsModalOpen(false)}
+          onTest={onTestSlot}
         />
       )}
     </div>
@@ -187,10 +193,11 @@ function SessionCard({
   onToggleActive: () => void;
   onResync: () => void;
 }) {
-  const frequencyLabels = {
+  const frequencyLabels: Record<string, string> = {
     weekly: "Weekly",
     fortnightly: "Fortnightly",
     monthly: "Monthly",
+    one_off: "One-off",
   };
 
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -200,6 +207,9 @@ function SessionCard({
       : null;
 
   const getScheduleText = () => {
+    if (session.frequency === "one_off" && session.oneOffDate) {
+      return `One-off on ${new Date(session.oneOffDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
+    }
     if (session.frequency === "monthly" && session.dayOfMonth) {
       return `${frequencyLabels[session.frequency]} on day ${session.dayOfMonth}`;
     }
@@ -209,7 +219,7 @@ function SessionCard({
     ) {
       return `${frequencyLabels[session.frequency]} on ${getDayName()}`;
     }
-    return frequencyLabels[session.frequency];
+    return frequencyLabels[session.frequency] ?? session.frequency;
   };
 
   const getAttemptText = () => {

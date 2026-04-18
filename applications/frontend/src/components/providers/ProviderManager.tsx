@@ -8,6 +8,10 @@ interface ProviderManagerProps {
   onAddProvider: (provider: ProviderInput) => Promise<void>;
   onUpdateProvider: (id: number, updates: Partial<ProviderInput>) => Promise<void>;
   onDeleteProvider: (id: number) => Promise<void>;
+  onTestProvider: (payload: {
+    type: string;
+    credentials: { username: string; password: string };
+  }) => Promise<{ success: boolean; message: string }>;
 }
 
 export function ProviderManager({
@@ -15,6 +19,7 @@ export function ProviderManager({
   onAddProvider,
   onUpdateProvider,
   onDeleteProvider,
+  onTestProvider,
 }: ProviderManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
@@ -110,6 +115,7 @@ export function ProviderManager({
           provider={editingProvider}
           onSave={handleSaveProvider}
           onClose={() => setIsModalOpen(false)}
+          onTest={onTestProvider}
         />
       )}
     </div>

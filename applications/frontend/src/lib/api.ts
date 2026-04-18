@@ -32,6 +32,7 @@ type BookingSlotDto = {
   frequency: BookingSlot["frequency"];
   day_of_week?: number | null;
   day_of_month?: number | null;
+  one_off_date?: string | null;
   time: string;
   timezone: string;
   duration_minutes?: number | null;
@@ -120,6 +121,7 @@ function mapBookingSlot(dto: BookingSlotDto): BookingSlot {
     frequency: dto.frequency,
     dayOfWeek: dto.day_of_week ?? undefined,
     dayOfMonth: dto.day_of_month ?? undefined,
+    oneOffDate: dto.one_off_date ?? undefined,
     time: dto.time,
     timezone: dto.timezone,
     durationMinutes: dto.duration_minutes ?? undefined,
@@ -156,6 +158,7 @@ function serializeSlotPayload(input: Partial<BookingSlotInput>): Record<string, 
   if (input.frequency !== undefined) payload.frequency = input.frequency;
   if (input.dayOfWeek !== undefined) payload.day_of_week = input.dayOfWeek;
   if (input.dayOfMonth !== undefined) payload.day_of_month = input.dayOfMonth;
+  if (input.oneOffDate !== undefined) payload.one_off_date = input.oneOffDate;
   if (input.time !== undefined) payload.time = input.time;
   if (input.timezone !== undefined) payload.timezone = input.timezone;
   if (input.isActive !== undefined) payload.is_active = input.isActive;
@@ -215,6 +218,30 @@ export async function updateProvider(
   });
   const data = await handleResponse<ProviderDto>(response);
   return mapProvider(data);
+}
+
+export async function testProviderCredentials(
+  token: string,
+  payload: { type: string; credentials: { username: string; password: string } },
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/providers/test`, {
+    method: "POST",
+    headers: buildHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<{ success: boolean; message: string }>(response);
+}
+
+export async function testBookingSlot(
+  token: string,
+  payload: { providerId: number; providerOptions: Record<string, unknown> },
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/booking-slots/test`, {
+    method: "POST",
+    headers: buildHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ provider_id: payload.providerId, provider_options: payload.providerOptions }),
+  });
+  return handleResponse<{ success: boolean; message: string }>(response);
 }
 
 export async function fetchBookingSlots(token: string): Promise<BookingSlot[]> {

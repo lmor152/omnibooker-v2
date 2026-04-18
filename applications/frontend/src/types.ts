@@ -36,7 +36,7 @@ export interface ProviderInput {
   credentials: ProviderCredentials;
 }
 
-export type BookingFrequency = "weekly" | "fortnightly" | "monthly";
+export type BookingFrequency = "weekly" | "fortnightly" | "monthly" | "one_off";
 
 export interface ClubsparkOptions {
   courtSlug?: string;
@@ -64,6 +64,7 @@ export interface BookingSlot {
   frequency: BookingFrequency;
   dayOfWeek?: number | null;
   dayOfMonth?: number | null;
+  oneOffDate?: string | null;
   time: string;
   timezone: string;
   isActive: boolean;
@@ -85,6 +86,7 @@ export interface BookingSlotInput {
   frequency: BookingFrequency;
   dayOfWeek?: number | null;
   dayOfMonth?: number | null;
+  oneOffDate?: string | null;
   time: string;
   timezone: string;
   isActive: boolean;

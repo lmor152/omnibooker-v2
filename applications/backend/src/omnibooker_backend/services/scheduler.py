@@ -22,7 +22,15 @@ def _calculate_next_occurrence(
     hours, minutes = map(int, slot.time.split(":"))
     result = result.replace(hour=hours, minute=minutes)
 
-    if slot.frequency in (
+    if slot.frequency == models.FrequencyEnum.one_off:
+        if not slot.one_off_date:
+            raise ValueError("one_off booking slot has no date set")
+        result = result.replace(
+            year=slot.one_off_date.year,
+            month=slot.one_off_date.month,
+            day=slot.one_off_date.day,
+        )
+    elif slot.frequency in (
         models.FrequencyEnum.weekly,
         models.FrequencyEnum.fortnightly,
     ):
@@ -130,6 +138,9 @@ def sync_pending_tasks(
 
     if not slot.is_active:
         return
+
+    if slot.frequency == models.FrequencyEnum.one_off:
+        count = 1
 
     if reset_existing:
         db.query(models.BookingTask).filter(

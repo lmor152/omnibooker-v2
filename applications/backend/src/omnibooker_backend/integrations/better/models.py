@@ -86,7 +86,7 @@ class CartResponse(BaseModel):
     itemHash: str
     credits: dict[Literal["membership", "general"], CartCredit] | None = None
     items: list["CartItem"] = Field(default_factory=list)
-    total: int
+    total: float
 
     model_config = ConfigDict(extra="ignore")
 

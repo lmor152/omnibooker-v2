@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from ..database import get_db
+from ..integrations.better.client import BetterAPIError, BetterClient
+from ..integrations.clubspark.client import ClubsparkAPIError, ClubsparkClient
 from ..security import get_current_active_user
 
 router = APIRouter(prefix="/providers", tags=["providers"])
@@ -40,6 +42,41 @@ async def update_provider(
             status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found"
         )
     return crud.update_provider(db, provider, provider_in)
+
+
+@router.post("/test", response_model=schemas.ProviderTestResult)
+async def test_provider_credentials(
+    test_in: schemas.ProviderTestRequest,
+    current_user: models.User = Depends(get_current_active_user),
+):
+    username = test_in.credentials.username
+    password = test_in.credentials.password
+
+    if test_in.type == "Better":
+        try:
+            with BetterClient(username, password) as client:
+                client._authenticate()
+            return schemas.ProviderTestResult(success=True, message="Successfully authenticated with Better")
+        except BetterAPIError as exc:
+            return schemas.ProviderTestResult(success=False, message=str(exc))
+        except Exception as exc:
+            return schemas.ProviderTestResult(success=False, message=f"Unexpected error: {exc}")
+
+    elif test_in.type == "Clubspark":
+        try:
+            with ClubsparkClient(username, password) as client:
+                client._fetch_token()
+            return schemas.ProviderTestResult(success=True, message="Successfully authenticated with Clubspark")
+        except ClubsparkAPIError as exc:
+            return schemas.ProviderTestResult(success=False, message=str(exc))
+        except Exception as exc:
+            return schemas.ProviderTestResult(success=False, message=f"Unexpected error: {exc}")
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential testing is not supported for this provider type",
+        )
 
 
 @router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,8 +1,8 @@
 import enum
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -12,6 +12,7 @@ class FrequencyEnum(str, enum.Enum):
     weekly = "weekly"
     fortnightly = "fortnightly"
     monthly = "monthly"
+    one_off = "one_off"
 
 
 class TaskStatusEnum(str, enum.Enum):
@@ -85,6 +86,7 @@ class BookingSlot(Base):
     )
     day_of_week: Mapped[Optional[int]] = mapped_column(Integer)
     day_of_month: Mapped[Optional[int]] = mapped_column(Integer)
+    one_off_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     time: Mapped[str] = mapped_column(String(5), nullable=False)  # HH:MM
     timezone: Mapped[str] = mapped_column(
         String(50), nullable=False, server_default="UTC"

@@ -6,6 +6,10 @@ interface ProviderModalProps {
   provider: Provider | null;
   onSave: (providerInput: ProviderInput) => Promise<void>;
   onClose: () => void;
+  onTest: (payload: {
+    type: string;
+    credentials: { username: string; password: string };
+  }) => Promise<{ success: boolean; message: string }>;
 }
 
 const defaultProvider: ProviderInput = {
@@ -32,10 +36,14 @@ const requiresCardCvc = (providerType: ProviderType): boolean => {
   return PROVIDERS_REQUIRING_CVC.includes(providerType);
 };
 
-export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps) {
+type TestStatus = "idle" | "loading" | "success" | "error";
+
+export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderModalProps) {
   const [form, setForm] = useState<ProviderInput>(defaultProvider);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [testMessage, setTestMessage] = useState<string>("");
 
   useEffect(() => {
     if (provider) {
@@ -98,6 +106,33 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
       const message = err instanceof Error ? err.message : "Unable to save provider";
       setError(message);
       setIsSubmitting(false);
+    }
+  };
+
+  const supportsTest = form.type === "Better" || form.type === "Clubspark";
+
+  const handleTest = async () => {
+    setTestStatus("loading");
+    setTestMessage("");
+    try {
+      const result = await onTest({
+        type: form.type,
+        credentials: {
+          username: form.credentials.username,
+          password: form.credentials.password,
+        },
+      });
+      if (result.success) {
+        setTestStatus("success");
+        setTestMessage(result.message);
+        setTimeout(() => setTestStatus("idle"), 4000);
+      } else {
+        setTestStatus("error");
+        setTestMessage(result.message);
+      }
+    } catch {
+      setTestStatus("error");
+      setTestMessage("Failed to reach server");
     }
   };
 
@@ -382,21 +417,46 @@ export function ProviderModal({ provider, onSave, onClose }: ProviderModalProps)
             </div>
           )}
 
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? "Saving..." : provider ? "Save Changes" : "Add Provider"}
-            </button>
+          <div className="flex flex-col gap-3 pt-4">
+            {testStatus === "success" && (
+              <p className="text-sm text-green-600 font-medium text-center">{testMessage}</p>
+            )}
+            {testStatus === "error" && (
+              <p className="text-sm text-red-600 font-medium text-center">{testMessage}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              {supportsTest && (
+                <button
+                  type="button"
+                  onClick={handleTest}
+                  disabled={testStatus === "loading" || !form.credentials.username || !form.credentials.password}
+                  className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {testStatus === "loading" ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    "Test"
+                  )}
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex-1 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "Saving..." : provider ? "Save Changes" : "Add Provider"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

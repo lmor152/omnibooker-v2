@@ -1,8 +1,12 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from ..database import get_db
+from ..integrations.better.client import BetterAPIError, BetterClient
+from ..integrations.clubspark.client import ClubsparkAPIError, ClubsparkClient
 from ..security import get_current_active_user
 from ..services.scheduler import sync_pending_tasks
 
@@ -85,6 +89,56 @@ async def delete_booking_slot(
         )
     crud.delete_booking_slot(db, slot)
     return None
+
+
+@router.post("/test", response_model=schemas.ProviderTestResult)
+async def test_booking_slot(
+    test_in: schemas.BookingSlotTestRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    provider = crud.get_provider(db, user_id=current_user.id, provider_id=test_in.provider_id)
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider not found")
+
+    creds = provider.credentials
+    username = creds.get("username", "")
+    password = creds.get("password", "")
+    opts = test_in.provider_options
+    test_date = (date.today() + timedelta(days=7)).isoformat()
+
+    if provider.type == "Better":
+        venue_slug = str(opts.get("venueSlug", ""))
+        activity_slug = str(opts.get("activitySlug", ""))
+        if not venue_slug or not activity_slug:
+            return schemas.ProviderTestResult(success=False, message="Venue slug and activity slug are required")
+        try:
+            with BetterClient(username, password) as client:
+                client.list_activity_times(venue_slug, activity_slug, date=test_date)
+            return schemas.ProviderTestResult(success=True, message="Successfully connected to Better venue")
+        except BetterAPIError as exc:
+            return schemas.ProviderTestResult(success=False, message=str(exc))
+        except Exception as exc:
+            return schemas.ProviderTestResult(success=False, message=f"Unexpected error: {exc}")
+
+    elif provider.type == "Clubspark":
+        court_slug = str(opts.get("courtSlug", ""))
+        if not court_slug:
+            return schemas.ProviderTestResult(success=False, message="Court slug is required")
+        try:
+            with ClubsparkClient(username, password) as client:
+                client.get_app_settings(court_slug)
+            return schemas.ProviderTestResult(success=True, message="Successfully connected to Clubspark venue")
+        except ClubsparkAPIError as exc:
+            return schemas.ProviderTestResult(success=False, message=str(exc))
+        except Exception as exc:
+            return schemas.ProviderTestResult(success=False, message=f"Unexpected error: {exc}")
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session testing is not supported for this provider type",
+        )
 
 
 @router.post("/{slot_id}/resync", response_model=schemas.BookingSlotRead)

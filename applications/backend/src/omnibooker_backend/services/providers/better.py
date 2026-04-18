@@ -269,22 +269,17 @@ def _attempt_better_booking(
 
     if credits_to_use:
         try:
-            client.apply_credits(credits_to_use)
+            credit_result = client.apply_credits(credits_to_use)
+            if not credit_result.reserved:
+                logger.warning(
+                    "Better credit reservation returned reserved=False, falling back to card"
+                )
+                credits_to_use = 0
         except BetterAPIError as exc:
             logger.warning("Better credit application failed: %s", exc)
             credits_to_use = 0
 
-    total_raw = cart.total or 0
-    if isinstance(total_raw, str):
-        try:
-            total_cost = int(float(total_raw))
-        except ValueError:
-            total_cost = 0
-    else:
-        try:
-            total_cost = int(total_raw)
-        except (TypeError, ValueError):
-            total_cost = 0
+    total_cost = cart.total or 0
     needs_card = total_cost > credits_to_use
     transaction_id = ""
 

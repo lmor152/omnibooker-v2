@@ -9,6 +9,10 @@ interface SessionModalProps {
   providers: Provider[];
   onSave: (slotInput: BookingSlotInput) => Promise<void>;
   onClose: () => void;
+  onTest: (payload: {
+    providerId: number;
+    providerOptions: Record<string, unknown>;
+  }) => Promise<{ success: boolean; message: string }>;
 }
 
 const defaultSlotValues: BookingSlotInput = {
@@ -17,6 +21,7 @@ const defaultSlotValues: BookingSlotInput = {
   frequency: "weekly",
   dayOfWeek: 1,
   dayOfMonth: null,
+  oneOffDate: null,
   time: "09:00",
   timezone: "Europe/London",
   isActive: true,
@@ -39,7 +44,9 @@ const COMMON_TIMEZONES = [
   { value: "UTC", label: "UTC" },
 ];
 
-export function SessionModal({ slot, providers, onSave, onClose }: SessionModalProps) {
+type TestStatus = "idle" | "loading" | "success" | "error";
+
+export function SessionModal({ slot, providers, onSave, onClose, onTest }: SessionModalProps) {
   const [form, setForm] = useState<BookingSlotInput>(defaultSlotValues);
   const [clubCourtSlug, setClubCourtSlug] = useState("");
   const [clubDoubleSession, setClubDoubleSession] = useState(false);
@@ -52,6 +59,8 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
   const [betterTargetCourts, setBetterTargetCourts] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [testMessage, setTestMessage] = useState<string>("");
 
   useEffect(() => {
     if (slot) {
@@ -61,6 +70,7 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
         frequency: slot.frequency,
         dayOfWeek: slot.dayOfWeek ?? undefined,
         dayOfMonth: slot.dayOfMonth ?? undefined,
+        oneOffDate: slot.oneOffDate ?? null,
         time: slot.time,
         timezone: slot.timezone,
         isActive: slot.isActive,
@@ -112,6 +122,36 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
     () => providers.find((p) => p.id === form.providerId),
     [providers, form.providerId]
   );
+
+  const supportsTest =
+    selectedProvider?.type === "Better" || selectedProvider?.type === "Clubspark";
+
+  const handleTest = async () => {
+    if (!form.providerId) return;
+    setTestStatus("loading");
+    setTestMessage("");
+    const providerOptions: Record<string, unknown> = {};
+    if (selectedProvider?.type === "Clubspark" && clubCourtSlug) {
+      providerOptions.courtSlug = clubCourtSlug;
+    } else if (selectedProvider?.type === "Better") {
+      if (betterVenueSlug) providerOptions.venueSlug = betterVenueSlug.trim();
+      if (betterActivitySlug) providerOptions.activitySlug = betterActivitySlug.trim();
+    }
+    try {
+      const result = await onTest({ providerId: form.providerId, providerOptions });
+      if (result.success) {
+        setTestStatus("success");
+        setTestMessage(result.message);
+        setTimeout(() => setTestStatus("idle"), 4000);
+      } else {
+        setTestStatus("error");
+        setTestMessage(result.message);
+      }
+    } catch {
+      setTestStatus("error");
+      setTestMessage("Failed to reach server");
+    }
+  };
 
   const handleAddTargetTime = (value: string) => {
     if (!/^[0-2]\d:[0-5]\d$/.test(value)) {
@@ -179,6 +219,7 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
           ? form.dayOfWeek ?? 0
           : null,
       dayOfMonth: form.frequency === "monthly" ? form.dayOfMonth ?? 1 : null,
+      oneOffDate: form.frequency === "one_off" ? form.oneOffDate ?? null : null,
     };
 
     setIsSubmitting(true);
@@ -266,6 +307,7 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
                 <option value="weekly">Weekly</option>
                 <option value="fortnightly">Fortnightly</option>
                 <option value="monthly">Monthly</option>
+                <option value="one_off">One-off</option>
               </select>
             </div>
 
@@ -322,6 +364,25 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
                   value={form.dayOfMonth ?? 1}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, dayOfMonth: Number(e.target.value) }))
+                  }
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
+              </div>
+            )}
+
+            {/* Date for one-off */}
+            {form.frequency === "one_off" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={form.oneOffDate ?? ""}
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, oneOffDate: e.target.value || null }))
                   }
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   required
@@ -610,22 +671,47 @@ export function SessionModal({ slot, providers, onSave, onClose }: SessionModalP
           )}
         </form>
 
-        <div className="border-t border-gray-200 p-6 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            onClick={handleSubmit}
-            disabled={isSubmitting || providers.length === 0}
-            className="flex-1 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting ? "Saving..." : slot ? "Save Changes" : "Add Session"}
-          </button>
+        <div className="border-t border-gray-200 p-6 flex flex-col gap-3">
+          {testStatus === "success" && (
+            <p className="text-sm text-green-600 font-medium text-center">{testMessage}</p>
+          )}
+          {testStatus === "error" && (
+            <p className="text-sm text-red-600 font-medium text-center">{testMessage}</p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            {supportsTest && (
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={testStatus === "loading" || !form.providerId}
+                className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {testStatus === "loading" ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Test"
+                )}
+              </button>
+            )}
+            <button
+              type="submit"
+              onClick={handleSubmit}
+              disabled={isSubmitting || providers.length === 0}
+              className="flex-1 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "Saving..." : slot ? "Save Changes" : "Add Session"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

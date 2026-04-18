@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -70,6 +70,16 @@ class ProviderRead(ProviderBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProviderTestRequest(BaseModel):
+    type: str
+    credentials: ProviderCredentials
+
+
+class ProviderTestResult(BaseModel):
+    success: bool
+    message: str
+
+
 class BookingSlotBase(BaseModel):
     name: str
     provider_id: int
@@ -90,6 +100,7 @@ class BookingSlotBase(BaseModel):
     ] = Field(default_factory=dict)
     day_of_week: Optional[int] = Field(None, ge=0, le=6)
     day_of_month: Optional[int] = Field(None, ge=1, le=31)
+    one_off_date: Optional[date] = None
 
 
 class BookingSlotCreate(BookingSlotBase):
@@ -116,6 +127,14 @@ class BookingSlotUpdate(BaseModel):
     ] = None
     day_of_week: Optional[int] = Field(None, ge=0, le=6)
     day_of_month: Optional[int] = Field(None, ge=1, le=31)
+    one_off_date: Optional[date] = None
+
+
+class BookingSlotTestRequest(BaseModel):
+    provider_id: int
+    provider_options: dict[str, str | int | float | bool | None | list[str] | list[int]] = Field(
+        default_factory=dict
+    )
 
 
 class BookingSlotRead(BookingSlotBase):
