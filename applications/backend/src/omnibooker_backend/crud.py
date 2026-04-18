@@ -107,6 +107,7 @@ def create_booking_slot(
         frequency=slot_in.frequency,
         day_of_week=slot_in.day_of_week,
         day_of_month=slot_in.day_of_month,
+        one_off_date=slot_in.one_off_date,
         time=slot_in.time,
         timezone=slot_in.timezone,
         duration_minutes=slot_in.duration_minutes or 60,
