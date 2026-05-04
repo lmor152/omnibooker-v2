@@ -39,7 +39,7 @@ class User(Base):
     full_name: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     providers: Mapped[list["Provider"]] = relationship(
@@ -61,7 +61,7 @@ class Provider(Base):
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Other")
     credentials: Mapped[dict[str, Optional[str]]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     owner: Mapped["User"] = relationship("User", back_populates="providers")
@@ -106,7 +106,7 @@ class BookingSlot(Base):
         mapped_column(JSON, default=dict)
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     owner: Mapped["User"] = relationship("User", back_populates="booking_slots")
@@ -125,15 +125,15 @@ class BookingTask(Base):
     booking_slot_id: Mapped[int] = mapped_column(
         ForeignKey("booking_slots.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    scheduled_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    scheduled_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[TaskStatusEnum] = mapped_column(
         Enum(TaskStatusEnum), default=TaskStatusEnum.pending, nullable=False
     )
-    attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
-    attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     booking_slot: Mapped["BookingSlot"] = relationship(

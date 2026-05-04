@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import logging
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import Iterable, List
+from typing import List
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
@@ -58,24 +58,6 @@ def _calculate_next_occurrence(
         result = result.replace(year=year, month=month, day=safe_day)
 
     return result.astimezone(timezone.utc)
-
-
-def generate_upcoming_tasks(
-    slot: models.BookingSlot, count: int = 6
-) -> Iterable[models.BookingTask]:
-    now = datetime.now(timezone.utc)
-    for offset in range(count):
-        scheduled_at = _calculate_next_occurrence(slot, now, offset)
-        if scheduled_at <= now:
-            continue
-
-        attempt_at = _calculate_attempt_at(slot, scheduled_at, reference=now)
-        yield models.BookingTask(
-            booking_slot_id=slot.id,
-            scheduled_date=scheduled_at,
-            attempt_at=attempt_at,
-            status=models.TaskStatusEnum.pending,
-        )
 
 
 def _calculate_attempt_at(
@@ -197,8 +179,6 @@ def sync_pending_tasks(
 
 
 def _normalize_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 

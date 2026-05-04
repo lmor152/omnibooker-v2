@@ -86,9 +86,9 @@ class BookingTaskWorker:
             return 0
 
         if task.attempt_at is None:
-            task.attempt_at = task.scheduled_date
-            db.add(task)
-            db.commit()
+            logger.error("Task %s has no attempt_at set; marking failed", task.id)
+            _mark_failed(db, task, "No attempt_at set — task skipped")
+            return 0
 
         if not slot.is_active:
             logger.info(

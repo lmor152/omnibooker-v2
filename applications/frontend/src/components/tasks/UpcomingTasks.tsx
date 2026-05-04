@@ -480,14 +480,18 @@ function TaskCard({
   const timezoneDisplay = slot?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    // API returns naive UTC strings without Z — append Z to force correct UTC parsing
+    const utcString = /[Z+]/.test(dateString) ? dateString : dateString + "Z";
+    const date = new Date(utcString);
+    const tzOptions = { timeZone: timezoneDisplay };
     const datePart = new Intl.DateTimeFormat("en-GB", {
+      ...tzOptions,
       day: "2-digit",
       month: "short",
       year: "2-digit",
-    })
-      .format(date);
+    }).format(date);
     const timePart = new Intl.DateTimeFormat("en-GB", {
+      ...tzOptions,
       hour: "2-digit",
       minute: "2-digit",
     }).format(date);

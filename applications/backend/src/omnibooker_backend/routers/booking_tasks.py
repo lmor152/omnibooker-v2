@@ -83,7 +83,7 @@ async def cancel_booking_task(
     )
     slot = task.booking_slot
     if slot and slot.is_active:
-        sync_pending_tasks(db, slot)
+        sync_pending_tasks(db, slot, reset_existing=True)
     return task
 
 
@@ -151,12 +151,7 @@ async def reactivate_booking_task(
 
     # Check if the task is still in the future
     now = datetime.now(timezone.utc)
-    scheduled = (
-        task.scheduled_date.replace(tzinfo=timezone.utc)
-        if task.scheduled_date.tzinfo is None
-        else task.scheduled_date
-    )
-    if scheduled < now:
+    if task.scheduled_date.astimezone(timezone.utc) < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot reactivate a task scheduled in the past",

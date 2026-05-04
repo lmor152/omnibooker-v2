@@ -71,7 +71,7 @@ async def update_booking_slot(
     if was_active and not slot.is_active:
         crud.cancel_pending_tasks_for_slot(db, slot)
     elif slot.is_active:
-        sync_pending_tasks(db, slot)
+        sync_pending_tasks(db, slot, reset_existing=True)
 
     return slot
 

@@ -4,11 +4,10 @@ import importlib
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import cast
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models
+from .scheduler import _slot_timezone
 from .booking_engine import (
     BookingContext,
     BookingProviderNotRegisteredError,
@@ -92,7 +91,7 @@ def _build_context(
     provider: models.Provider,
     owner: models.User,
 ) -> BookingContext:
-    tz = _resolve_timezone(slot.timezone or "UTC")
+    tz = _slot_timezone(slot)
     scheduled_start_utc = _ensure_utc(task.scheduled_date)
     duration = slot.duration_minutes or 60
     scheduled_end_utc = scheduled_start_utc + timedelta(minutes=duration)
@@ -149,14 +148,6 @@ def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
-
-def _resolve_timezone(name: str) -> ZoneInfo:
-    try:
-        return ZoneInfo(name)
-    except ZoneInfoNotFoundError:  # pragma: no cover - depends on system tz db
-        logger.warning("Unknown timezone '%s'; defaulting to UTC", name)
-        return ZoneInfo("UTC")
 
 
 def _log_success(task: models.BookingTask, result: BookingResult) -> None:
