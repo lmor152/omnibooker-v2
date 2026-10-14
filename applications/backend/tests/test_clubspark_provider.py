@@ -12,6 +12,9 @@ from omnibooker_backend.services.booking_engine import (  # type: ignore[import-
     TaskContext,
     UserContext,
 )
+from omnibooker_backend.integrations.clubspark.utils import (  # type: ignore[import-not-found]
+    rank_slots,
+)
 from omnibooker_backend.services.providers import (
     clubspark,  # type: ignore[import-not-found]
 )
@@ -47,7 +50,7 @@ class _FakeClubsparkClient:
             ID="resource",
             Name="Court 1",
         )
-        time_slot = SimpleNamespace(Time=600, Resources=[resource])
+        time_slot = SimpleNamespace(Time=540, Resources=[resource])
         return SimpleNamespace(Times=[time_slot])
 
     def get_app_settings(self, *_args: Any, **_kwargs: Any):
@@ -131,6 +134,67 @@ def test_clubspark_provider_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.success is True
     assert "Booked clissold" in (result.message or "")
     assert result.confirmation_code == "txn_123"
+    assert result.booked_time == "09:00"
+    assert result.booked_resource == "Court 1"
+
+
+def test_clubspark_provider_skips_non_target_times(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _FakeClubsparkClient()
+    monkeypatch.setattr(clubspark, "ClubsparkClient", lambda *_a, **_k: client)
+    monkeypatch.setattr(clubspark, "StripeClient", _stripe_factory)
+
+    # Only a 09:00 slot is available; asking for evening times must not book it.
+    context = _make_context(
+        {
+            "courtSlug": "clissold",
+            "targetTimes": ["18:00", "19:00"],
+            "targetCourts": [1],
+        }
+    )
+
+    result = clubspark._book_clubspark(context)  # type: ignore[attr-defined]
+
+    assert result.success is False
+    assert "preferred times" in (result.message or "")
+    assert client.payments == []
+
+
+def test_rank_slots_only_returns_target_times() -> None:
+    def court(name: str) -> SimpleNamespace:
+        return SimpleNamespace(Name=name)
+
+    times = [
+        SimpleNamespace(Time=420, Resources=[court("Court 1")]),
+        SimpleNamespace(
+            Time=1080,
+            Resources=[court("Court 2"), court("Court 3"), court("Mini Court 1")],
+        ),
+        SimpleNamespace(Time=1140, Resources=[court("Court 3"), court("Court 4")]),
+    ]
+
+    ranked = rank_slots(times, [1080, 1140], ["Court 3", "Court 2"])  # type: ignore[arg-type]
+
+    assert [(r.start_time, r.resource.Name) for r in ranked] == [
+        (1080, "Court 3"),
+        (1080, "Court 2"),
+        (1140, "Court 3"),
+    ]
+
+
+def test_rank_slots_without_preferences_returns_everything() -> None:
+    times = [
+        SimpleNamespace(Time=420, Resources=[SimpleNamespace(Name="Court 1")]),
+        SimpleNamespace(Time=1080, Resources=[SimpleNamespace(Name="Court 2")]),
+    ]
+
+    ranked = rank_slots(times, [], [])  # type: ignore[arg-type]
+
+    assert [(r.start_time, r.resource.Name) for r in ranked] == [
+        (420, "Court 1"),
+        (1080, "Court 2"),
+    ]
 
 
 def test_clubspark_provider_requires_slug(monkeypatch: pytest.MonkeyPatch) -> None:

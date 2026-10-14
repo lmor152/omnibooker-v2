@@ -74,6 +74,9 @@ def execute_booking_task(db: Session, task: models.BookingTask) -> models.Bookin
 
     task.status = models.TaskStatusEnum.success
     task.error_message = None
+    task.booked_time = result.booked_time
+    task.booked_resource = result.booked_resource
+    task.confirmation_code = result.confirmation_code
     if task.attempted_at is None:
         task.attempted_at = datetime.now(timezone.utc)
 
@@ -152,7 +155,13 @@ def _ensure_utc(value: datetime) -> datetime:
 
 def _log_success(task: models.BookingTask, result: BookingResult) -> None:
     if result.confirmation_code:
-        logger.info("Task %s confirmed with code %s", task.id, result.confirmation_code)
+        logger.info(
+            "Task %s confirmed with code %s (time=%s resource=%s)",
+            task.id,
+            result.confirmation_code,
+            result.booked_time,
+            result.booked_resource,
+        )
     elif result.message:
         logger.info("Task %s completed: %s", task.id, result.message)
     else:

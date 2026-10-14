@@ -59,6 +59,8 @@ class BookingResult:
     success: bool
     message: str | None = None
     confirmation_code: str | None = None
+    booked_time: str | None = None  # HH:MM local to the venue
+    booked_resource: str | None = None  # e.g. court name
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

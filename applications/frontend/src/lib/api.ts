@@ -56,6 +56,9 @@ type BookingTaskDto = {
   status: BookingTask["status"];
   error_message?: string | null;
   attempted_at?: string | null;
+  booked_time?: string | null;
+  booked_resource?: string | null;
+  confirmation_code?: string | null;
   created_at: string;
 };
 
@@ -147,6 +150,9 @@ function mapBookingTask(dto: BookingTaskDto): BookingTask {
     status: dto.status,
     errorMessage: dto.error_message ?? undefined,
     attemptedAt: dto.attempted_at ?? undefined,
+    bookedTime: dto.booked_time ?? undefined,
+    bookedResource: dto.booked_resource ?? undefined,
+    confirmationCode: dto.confirmation_code ?? undefined,
     createdAt: dto.created_at,
   };
 }

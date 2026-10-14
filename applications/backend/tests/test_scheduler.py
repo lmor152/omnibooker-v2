@@ -83,6 +83,13 @@ def _naive_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _aware_utc(value: datetime) -> datetime:
+    # SQLite returns naive datetimes; they're stored as UTC.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 def test_sync_pending_tasks_top_up_queue(db_session: Session) -> None:
     user = _create_user(db_session)
     provider = _create_provider(db_session, user)
@@ -175,7 +182,7 @@ def test_weekly_slot_uses_local_day_of_week(db_session: Session) -> None:
     assert pending, "Expected at least one pending task"
 
     task = pending[0]
-    local_time = task.scheduled_date.astimezone(ZoneInfo(slot.timezone))
+    local_time = _aware_utc(task.scheduled_date).astimezone(ZoneInfo(slot.timezone))
     assert local_time.weekday() == 6  # Sunday in Python weekday
     assert (local_time.hour, local_time.minute) == (18, 30)
 
@@ -199,9 +206,11 @@ def test_release_attempt_respects_slot_timezone(db_session: Session) -> None:
     assert pending, "Expected at least one pending task"
 
     task = pending[0]
-    scheduled_local = task.scheduled_date.astimezone(ZoneInfo(slot.timezone))
+    scheduled_local = _aware_utc(task.scheduled_date).astimezone(
+        ZoneInfo(slot.timezone)
+    )
     assert task.attempt_at is not None
-    attempt_local = task.attempt_at.astimezone(ZoneInfo(slot.timezone))
+    attempt_local = _aware_utc(task.attempt_at).astimezone(ZoneInfo(slot.timezone))
     expected_attempt = (scheduled_local - timedelta(days=1)).replace(
         hour=7, minute=15, second=0, microsecond=0
     )

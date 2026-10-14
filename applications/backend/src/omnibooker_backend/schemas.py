@@ -167,6 +167,9 @@ class BookingTaskUpdate(BaseModel):
 class BookingTaskRead(BookingTaskBase):
     id: int
     attempted_at: Optional[datetime] = None
+    booked_time: Optional[str] = None
+    booked_resource: Optional[str] = None
+    confirmation_code: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

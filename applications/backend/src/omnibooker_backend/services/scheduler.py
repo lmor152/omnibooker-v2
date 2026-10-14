@@ -67,7 +67,7 @@ def _calculate_attempt_at(
     reference: datetime | None = None,
 ) -> datetime:
     tz = _slot_timezone(slot)
-    scheduled_local = scheduled_at.astimezone(tz)
+    scheduled_local = _ensure_utc(scheduled_at).astimezone(tz)
 
     if slot.attempt_strategy == models.AttemptStrategyEnum.release:
         release_time = slot.release_time or "00:00"
@@ -179,7 +179,15 @@ def sync_pending_tasks(
 
 
 def _normalize_datetime(value: datetime) -> datetime:
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return _ensure_utc(value).replace(tzinfo=None)
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    # Some backends (e.g. SQLite) return naive datetimes; they are stored as UTC,
+    # so don't let astimezone() reinterpret them as the host's local time.
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _slot_day_of_week(slot: models.BookingSlot) -> int | None:

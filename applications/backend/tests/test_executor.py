@@ -76,13 +76,21 @@ def test_execute_booking_task_builds_context(db_session: Session) -> None:
 
     def handler(context: BookingContext) -> BookingResult:
         captured["context"] = context
-        return BookingResult(success=True, confirmation_code="CONF123")
+        return BookingResult(
+            success=True,
+            confirmation_code="CONF123",
+            booked_time="18:00",
+            booked_resource="Court 3",
+        )
 
     register_provider_handler(provider.type, handler)
 
     updated_task = execute_booking_task(db_session, task)
 
     assert updated_task.status == models.TaskStatusEnum.success
+    assert updated_task.booked_time == "18:00"
+    assert updated_task.booked_resource == "Court 3"
+    assert updated_task.confirmation_code == "CONF123"
     assert "context" in captured
     context = captured["context"]
     assert context.provider.credentials["username"] == "runner"

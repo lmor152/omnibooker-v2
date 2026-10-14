@@ -571,6 +571,19 @@ function TaskCard({
         </div>
       </div>
 
+      {/* Booked Details */}
+      {task.status === "success" && (task.bookedTime || task.bookedResource) && (
+        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+          <span className="font-medium">Booked:</span>{" "}
+          {[task.bookedResource, task.bookedTime && `at ${task.bookedTime}`].filter(Boolean).join(" ")}
+          {task.confirmationCode && (
+            <span className="block text-xs text-green-700 mt-1 break-all">
+              Ref: {task.confirmationCode}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Error Message */}
       {task.errorMessage && task.errorMessage.trim().toLowerCase() !== "slot was deactivated" && (
         <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">

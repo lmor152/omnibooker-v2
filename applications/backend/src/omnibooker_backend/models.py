@@ -131,6 +131,9 @@ class BookingTask(Base):
     )
     attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    booked_time: Mapped[Optional[str]] = mapped_column(String(5))
+    booked_resource: Mapped[Optional[str]] = mapped_column(String(255))
+    confirmation_code: Mapped[Optional[str]] = mapped_column(String(255))
     attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

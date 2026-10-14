@@ -228,6 +228,8 @@ def _book_better(context: BookingContext) -> BookingResult:
                 return BookingResult(
                     success=True,
                     confirmation_code=confirmation,
+                    booked_time=ranked.slot.starts_at.format_24_hour,
+                    booked_resource=ranked.slot.location.name,
                     message=(
                         f"Booked {options.venueSlug} at {ranked.slot.starts_at.format_24_hour}"
                     ),

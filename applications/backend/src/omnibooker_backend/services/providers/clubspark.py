@@ -244,8 +244,11 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
             return BookingResult(
                 success=True,
                 confirmation_code=confirmation,
+                booked_time=_minutes_to_label(ranked.start_time),
+                booked_resource=ranked.resource.Name,
                 message=(
-                    f"Booked {options.courtSlug} at {_minutes_to_label(ranked.start_time)}"
+                    f"Booked {options.courtSlug} {ranked.resource.Name} "
+                    f"at {_minutes_to_label(ranked.start_time)}"
                 ),
             )
 

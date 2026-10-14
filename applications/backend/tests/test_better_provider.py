@@ -145,6 +145,8 @@ def test_better_provider_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.success is True
     assert result.confirmation_code == "txn-123"
+    assert result.booked_time == "09:00"
+    assert result.booked_resource == "Court 1"
     assert "Booked" in (result.message or "")
 
 

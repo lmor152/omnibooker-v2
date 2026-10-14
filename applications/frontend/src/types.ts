@@ -109,5 +109,8 @@ export interface BookingTask {
   status: BookingTaskStatus;
   errorMessage?: string | null;
   attemptedAt?: string | null;
+  bookedTime?: string | null;
+  bookedResource?: string | null;
+  confirmationCode?: string | null;
   createdAt: string;
 }
