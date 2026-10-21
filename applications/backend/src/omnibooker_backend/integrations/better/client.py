@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Any, Callable
 
 import httpx
@@ -9,6 +10,8 @@ import httpx
 from .models import (
     ActivitiesResponse,
     AuthoriseCheckoutResponse,
+    Booking,
+    BookingsResponse,
     CartResponse,
     CreditResponse,
     LoginResponse,
@@ -42,6 +45,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
         self._username = username
         self._password = password
         self._token: str | None = None
+        self._user_id: int | None = None
         self._http_factory = http_factory or (lambda: httpx.Client(timeout=30.0))
         self._http = self._http_factory()
 
@@ -63,7 +67,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
         *,
         date: str,
     ) -> ActivitiesResponse:
-        path = f"/activities/venue/{venue_slug}/activity/{activity_slug}/times"
+        path = f"/activities/venue/{venue_slug}/activity/{activity_slug}/v2/times"
         data = self._get(path, params={"date": date})
         return ActivitiesResponse.model_validate(data)
 
@@ -77,7 +81,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
         end_time: str,
         composite_key: str,
     ) -> list[Slot]:
-        path = f"/activities/venue/{venue_slug}/activity/{activity_slug}/slots"
+        path = f"/activities/venue/{venue_slug}/activity/{activity_slug}/v2/slots"
         params = {
             "date": date,
             "start_time": start_time,
@@ -104,7 +108,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             "items": [
                 {
                     "id": slot.id,
-                    "type": "activity",
+                    "type": slot.cart_type,
                     "pricing_option_id": slot.pricing_option_id,
                     "apply_benefit": True,
                     "activity_restriction_ids": [],
@@ -122,7 +126,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             "cart_source": "activity-booking",
             "selected_user_id": None,
         }
-        data = self._post("/activities/cart/apply-credits", json=payload)
+        data = self._post("/credits/apply", json=payload)
         return CreditResponse.model_validate(data)
 
     def prepare_checkout(self) -> PrepareCheckoutResponse:
@@ -182,7 +186,8 @@ class BetterClient(AbstractContextManager["BetterClient"]):
         transaction_id: str,
         credits_to_use: int,
         cart_hash: str,
-    ) -> None:
+    ) -> int | None:
+        """Complete checkout and return Better's order id."""
         payments: list[dict[str, Any]] = []
         if credits_to_use:
             payments.append({"tender_type": "credit", "amount": credits_to_use})
@@ -194,7 +199,36 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             "source": "activity-booking",
             "item_hash": cart_hash,
         }
-        self._post("/checkout/complete", json=payload)
+        data = self._post("/checkout/complete", json=payload) or {}
+        return data.get("complete_order_id")
+
+    def list_bookings(self, starts_after: datetime) -> list[Booking]:
+        """List the user's upcoming bookings (first page, up to 20)."""
+
+        if self._user_id is None:
+            self._authenticate()
+        data = self._get(
+            "/v1/activities/bookings",
+            params={
+                "user_id": self._user_id,
+                "starts_after": starts_after.isoformat(timespec="seconds"),
+                "cancellation_source": "my-account",
+                "page": 1,
+            },
+        )
+        return BookingsResponse.model_validate(data).data
+
+    def cancel_bookings(self, booking_ids: list[int]) -> Any:
+        """Cancel bookings. Refunds follow Better's policy (usually account credit)."""
+
+        payload = {
+            "data": {
+                "cancellation_source": "my-account",
+                "update_type": "cancellation",
+                "booking_ids": booking_ids,
+            }
+        }
+        return self._request("PATCH", f"{self.BASE_URL}/v1/activities/bookings", json=payload)
 
     # Internal helpers ---------------------------------------------------------
     def _get(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
@@ -210,7 +244,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:  # pragma: no cover - network failure
             raise BetterAPIError(str(exc)) from exc
-        if response.status_code == 204:
+        if response.status_code == 204 or not response.content.strip():
             return None
         return response.json()
 
@@ -260,3 +294,4 @@ class BetterClient(AbstractContextManager["BetterClient"]):
         if not login.token:
             raise BetterAPIError("Better auth response missing token")
         self._token = login.token
+        self._user_id = login.user.get("id")

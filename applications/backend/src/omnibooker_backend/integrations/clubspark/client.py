@@ -9,9 +9,11 @@ import httpx
 
 from .models import (
     AppSettingsResponse,
+    CancelUserSessionResponse,
     CreatePaymentResponse,
     GetAvailabilityTimesResponse,
     GetCurrentUserResponse,
+    GetUserSessionsResponse,
     GetUserVenuesResponse,
     RequestSessionResponse,
 )
@@ -130,6 +132,24 @@ class ClubsparkClient(AbstractContextManager["ClubsparkClient"]):
             payload,
         )
         return RequestSessionResponse.model_validate(data)
+
+    def get_user_sessions(
+        self, start_date: str, end_date: str | None = None
+    ) -> GetUserSessionsResponse:
+        """List the user's bookings (including cancelled ones) from start_date (YYYY-MM-DD)."""
+
+        data = self._get(
+            f"/v0/Booking/GetUserSessions?endDate={end_date or ''}&startDate={start_date}"
+        )
+        return GetUserSessionsResponse.model_validate(data)
+
+    def cancel_user_session(self, session_id: str) -> CancelUserSessionResponse:
+        """Cancel a booked session. This GET changes state: never retry it blindly."""
+
+        data = self._get(
+            f"/v0/Booking/CancelUserSession/{session_id}?currentVenueContactID="
+        )
+        return CancelUserSessionResponse.model_validate(data)
 
     # Internal helpers ---------------------------------------------------------
     def _get(self, path: str) -> Any:

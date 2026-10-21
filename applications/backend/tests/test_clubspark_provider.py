@@ -54,7 +54,9 @@ class _FakeClubsparkClient:
         return SimpleNamespace(Times=[time_slot])
 
     def get_app_settings(self, *_args: Any, **_kwargs: Any):
-        venue = SimpleNamespace(ID="venue", StripeAccountID="acct_123")
+        venue = SimpleNamespace(
+            ID="venue", StripeAccountID="acct_123", BookingRefundWindow=24
+        )
         return SimpleNamespace(Venue=venue, StripePublishableKey="pk_test")
 
     def create_payment(self, **kwargs: Any):
@@ -62,7 +64,12 @@ class _FakeClubsparkClient:
         return SimpleNamespace(ID="pay_123")
 
     def request_session(self, **_kwargs: Any):
-        return SimpleNamespace(Result=1, TransactionID="txn_123")
+        return SimpleNamespace(
+            Result=1,
+            TransactionID="txn_123",
+            ResourceID="resource",
+            SessionID="session",
+        )
 
 
 class _FakeStripeClient:
@@ -136,6 +143,15 @@ def test_clubspark_provider_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.confirmation_code == "txn_123"
     assert result.booked_time == "09:00"
     assert result.booked_resource == "Court 1"
+    assert result.cost == 12.5
+    assert result.currency == "GBP"
+    assert result.metadata["provider"] == "clubspark"
+    assert result.metadata["venue_id"] == "venue"
+    assert result.metadata["resource_id"] == "resource"
+    assert result.metadata["session_id"] == "session"
+    assert result.metadata["payment_id"] == "pay_123"
+    assert result.metadata["transaction_id"] == "txn_123"
+    assert result.metadata["refund_window"] == 24
 
 
 def test_clubspark_provider_skips_non_target_times(

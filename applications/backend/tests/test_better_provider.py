@@ -65,10 +65,10 @@ class _FakeBetterClient:
         return [slot]
 
     def clear_cart(self) -> _FakeCart:
-        return _FakeCart(total=20)
+        return _FakeCart(total=2000)
 
     def add_slot_to_cart(self, *_args: Any, **_kwargs: Any) -> _FakeCart:
-        return _FakeCart(total=20)
+        return _FakeCart(total=2000)
 
     def apply_credits(self, *_args: Any, **_kwargs: Any) -> None:  # pragma: no cover
         return None
@@ -90,8 +90,9 @@ class _FakeBetterClient:
             transaction_status="authorised", transaction_uuid="txn-123"
         )
 
-    def complete_booking(self, *_args: Any, **_kwargs: Any) -> None:
+    def complete_booking(self, *_args: Any, **_kwargs: Any) -> int:
         self.completed = True
+        return 117941331
 
 
 def _make_context(provider_options: dict[str, Any]) -> BookingContext:
@@ -147,6 +148,12 @@ def test_better_provider_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.confirmation_code == "txn-123"
     assert result.booked_time == "09:00"
     assert result.booked_resource == "Court 1"
+    assert result.cost == 20.0  # 2000p
+    assert result.currency == "GBP"
+    assert result.metadata["provider"] == "better"
+    assert result.metadata["cart_hash"] == "cart-hash"
+    assert result.metadata["transaction_uuid"] == "txn-123"
+    assert result.metadata["order_id"] == 117941331
     assert "Booked" in (result.message or "")
 
 
