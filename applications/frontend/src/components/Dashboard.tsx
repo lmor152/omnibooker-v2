@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Calendar, Home, ListTodo, Settings as SettingsIcon, LogOut, LogIn, RefreshCw, BookOpen } from "lucide-react";
+import { Bell, Calendar, Home, ListTodo, Settings as SettingsIcon, LogOut, LogIn, RefreshCw, BookOpen } from "lucide-react";
 import type {
   BookingSlot,
   BookingSlotInput,
   BookingTask,
+  ChatDestination,
   Provider,
   ProviderInput,
 } from "../types";
@@ -11,6 +12,7 @@ import { ProviderManager } from "./providers/ProviderManager";
 import { SessionManager } from "./sessions/SessionManager";
 import { UpcomingTasks } from "./tasks/UpcomingTasks";
 import { GuidesTab } from "./guides/GuidesTab";
+import { NotificationSettings } from "./settings/NotificationSettings";
 import * as api from "../lib/api";
 import { Alert, AlertDescription } from "./ui/alert";
 
@@ -101,6 +103,7 @@ const DEMO_BOOKING_TASKS: BookingTask[] = [
     scheduledDate: "2024-06-17T20:00:00.000Z",
     attemptAt: "2024-06-10T07:00:05.000Z",
     status: "pending",
+    confirmationStatus: "not_required",
     createdAt: "2024-06-03T10:31:00.000Z",
   },
   {
@@ -109,6 +112,7 @@ const DEMO_BOOKING_TASKS: BookingTask[] = [
     scheduledDate: "2024-06-10T20:00:00.000Z",
     attemptAt: "2024-06-03T07:00:08.000Z",
     status: "success",
+    confirmationStatus: "confirmed",
     attemptedAt: "2024-06-03T07:00:12.000Z",
     createdAt: "2024-06-01T09:00:00.000Z",
   },
@@ -118,6 +122,7 @@ const DEMO_BOOKING_TASKS: BookingTask[] = [
     scheduledDate: "2024-06-12T18:30:00.000Z",
     attemptAt: "2024-06-12T16:30:00.000Z",
     status: "failed",
+    confirmationStatus: "not_required",
     errorMessage: "No spots available at release",
     attemptedAt: "2024-06-12T16:30:12.000Z",
     createdAt: "2024-06-05T12:00:00.000Z",
@@ -128,6 +133,7 @@ const DEMO_BOOKING_TASKS: BookingTask[] = [
     scheduledDate: "2024-06-19T18:30:00.000Z",
     attemptAt: "2024-06-19T16:30:00.000Z",
     status: "pending",
+    confirmationStatus: "not_required",
     createdAt: "2024-06-10T11:00:00.000Z",
   },
 ];
@@ -142,13 +148,14 @@ interface DashboardProps {
   onNavigateToHome: () => void;
 }
 
-type DashboardTab = "tasks" | "sessions" | "providers" | "guides";
+type DashboardTab = "tasks" | "sessions" | "providers" | "notifications" | "guides";
 
 export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, onNavigateToHome }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>("tasks");
   const [providers, setProviders] = useState<Provider[]>([]);
   const [bookingSlots, setBookingSlots] = useState<BookingSlot[]>([]);
   const [bookingTasks, setBookingTasks] = useState<BookingTask[]>([]);
+  const [destinations, setDestinations] = useState<ChatDestination[]>([]);
   const [isLoading, setIsLoading] = useState(isAuthenticated);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -168,14 +175,16 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
 
       try {
         const token = await getAccessToken();
-        const [providersData, slotData, taskData] = await Promise.all([
+        const [providersData, slotData, taskData, destinationData] = await Promise.all([
           api.fetchProviders(token),
           api.fetchBookingSlots(token),
           api.fetchBookingTasks(token),
+          api.fetchChatDestinations(token),
         ]);
         setProviders(providersData);
         setBookingSlots(slotData);
         setBookingTasks(taskData);
+        setDestinations(destinationData);
         setError(null);
       } catch (err) {
         setError(getErrorMessage(err));
@@ -387,6 +396,36 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
     }
   };
 
+  const handleConfirmBooking = async (taskId: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+    try {
+      const token = await getAccessToken();
+      const updated = await api.confirmBooking(token, taskId);
+      setBookingTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      setError(null);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      throw err;
+    }
+  };
+
+  const handleCancelBooking = async (taskId: number) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+    try {
+      const token = await getAccessToken();
+      const updated = await api.cancelBookingWithProvider(token, taskId);
+      setBookingTasks((prev) => prev.map((task) => (task.id === taskId ? updated : task)));
+      setError(null);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      throw err;
+    }
+  };
+
   const handleReactivateTask = async (taskId: number) => {
     if (!ensureAuthenticated()) {
       return;
@@ -517,6 +556,12 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
             label="Providers"
           />
           <TabButton
+            active={activeTab === "notifications"}
+            onClick={() => setActiveTab("notifications")}
+            icon={<Bell className="w-5 h-5" />}
+            label="Alerts"
+          />
+          <TabButton
             active={activeTab === "guides"}
             onClick={() => setActiveTab("guides")}
             icon={<BookOpen className="w-5 h-5" />}
@@ -563,6 +608,12 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 label="Providers"
               />
               <SidebarButton
+                active={activeTab === "notifications"}
+                onClick={() => setActiveTab("notifications")}
+                icon={<Bell className="w-5 h-5" />}
+                label="Notifications"
+              />
+              <SidebarButton
                 active={activeTab === "guides"}
                 onClick={() => setActiveTab("guides")}
                 icon={<BookOpen className="w-5 h-5" />}
@@ -582,12 +633,15 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 onReactivateTask={handleReactivateTask}
                 onDeleteTask={handleDeleteTask}
                 onExecuteTask={handleExecuteTask}
+                onConfirmBooking={handleConfirmBooking}
+                onCancelBooking={handleCancelBooking}
               />
             )}
             {activeTab === "sessions" && (
               <SessionManager
                 bookingSlots={bookingSlots}
                 providers={providers}
+                destinations={destinations}
                 onAddSlot={handleAddSlot}
                 onUpdateSlot={handleUpdateSlot}
                 onDeleteSlot={handleDeleteSlot}
@@ -602,6 +656,14 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 onUpdateProvider={handleUpdateProvider}
                 onDeleteProvider={handleDeleteProvider}
                 onTestProvider={handleTestProvider}
+              />
+            )}
+            {activeTab === "notifications" && (
+              <NotificationSettings
+                isAuthenticated={isAuthenticated}
+                getAccessToken={getAccessToken}
+                destinations={destinations}
+                onDestinationsChange={setDestinations}
               />
             )}
             {activeTab === "guides" && <GuidesTab />}

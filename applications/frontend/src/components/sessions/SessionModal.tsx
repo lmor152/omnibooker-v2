@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Clock, Calendar as CalendarIcon, AlertTriangle } from "lucide-react";
-import type { BookingSlot, BookingSlotInput, Provider } from "../../types";
+import type { BookingSlot, BookingSlotInput, ChatDestination, Provider } from "../../types";
 import { ChipsList } from "../ChipsList";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { Switch } from "../ui/switch";
 
 interface SessionModalProps {
   slot: BookingSlot | null;
   providers: Provider[];
+  destinations: ChatDestination[];
   onSave: (slotInput: BookingSlotInput) => Promise<void>;
   onClose: () => void;
   onTest: (payload: {
@@ -46,7 +48,7 @@ const COMMON_TIMEZONES = [
 
 type TestStatus = "idle" | "loading" | "success" | "error";
 
-export function SessionModal({ slot, providers, onSave, onClose, onTest }: SessionModalProps) {
+export function SessionModal({ slot, providers, destinations, onSave, onClose, onTest }: SessionModalProps) {
   const [form, setForm] = useState<BookingSlotInput>(defaultSlotValues);
   const [clubCourtSlug, setClubCourtSlug] = useState("");
   const [clubDoubleSession, setClubDoubleSession] = useState(false);
@@ -81,6 +83,12 @@ export function SessionModal({ slot, providers, onSave, onClose, onTest }: Sessi
         releaseDaysBefore: slot.releaseDaysBefore,
         releaseTime: slot.releaseTime ?? "00:00",
         providerOptions: slot.providerOptions ?? {},
+        notificationsEnabled: slot.notificationsEnabled ?? null,
+        notifyDestinationId: slot.notifyDestinationId ?? null,
+        autoCancelEnabled: slot.autoCancelEnabled ?? null,
+        confirmDeadlineHours: slot.confirmDeadlineHours ?? null,
+        reminderHours: slot.reminderHours ?? null,
+        confirmationPolicy: slot.confirmationPolicy ?? "owner_only",
       });
       const opts = slot.providerOptions ?? {};
       setClubCourtSlug((opts as any).courtSlug ?? "");
@@ -662,6 +670,13 @@ export function SessionModal({ slot, providers, onSave, onClose, onTest }: Sessi
               </div>
             </div>
           )}
+
+          <NotificationSettingsSection
+            value={form}
+            destinations={destinations}
+            onChange={(updates) => setForm((prev) => ({ ...prev, ...updates }))}
+            onError={setError}
+          />
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex gap-3">
