@@ -16,7 +16,10 @@ install-python:
 install-node:
 	cd applications/frontend && pnpm install
 
-run-backend:
+migrate:
+	uv run --project applications/backend -- python -m omnibooker_backend.migrate
+
+run-backend: migrate
 	uv run --project applications/backend -- uvicorn omnibooker_backend.main:app
 
 run-worker:
