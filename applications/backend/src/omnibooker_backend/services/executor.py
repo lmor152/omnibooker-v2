@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import cast
 from sqlalchemy.orm import Session, selectinload
 
@@ -77,6 +78,9 @@ def execute_booking_task(db: Session, task: models.BookingTask) -> models.Bookin
     task.booked_time = result.booked_time
     task.booked_resource = result.booked_resource
     task.confirmation_code = result.confirmation_code
+    task.provider_booking_ref = result.metadata or None
+    task.cost = Decimal(str(result.cost)) if result.cost is not None else None
+    task.currency = result.currency
     if task.attempted_at is None:
         task.attempted_at = datetime.now(timezone.utc)
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -116,6 +118,49 @@ class RequestSessionResponse(BaseModel):
     Attended: bool
     TransactionID: str
     HardwareIntegrationPIN: str
+
+
+class UserSessionVenue(BaseModel):
+    ID: str
+    Name: str
+    UrlSegment: str
+    TimeZone: str
+
+
+class UserSessionResource(BaseModel):
+    ID: str
+    Name: str
+
+
+class UserSession(BaseModel):
+    """A booking as listed by GetUserSessions. Dates/times are venue-local."""
+
+    ID: str  # the RequestSession SessionID; pass to CancelUserSession
+    Date: datetime
+    StartTime: str  # "HH:MM:SS"
+    EndTime: str
+    Duration: int
+    PaymentPrice: float
+    PaymentTransactionID: str | None = None
+    RefundDeadline: datetime | None = None  # null once refunded or not refundable
+    Refunded: bool
+    Refundable: bool
+    IsDeleted: bool
+    CanCancel: bool
+    PaymentStatus: int  # 2 = paid, 3 = refunded
+    CurrentStatus: int  # 0 = upcoming, 2 = played, 3 = cancelled
+    Venue: UserSessionVenue
+    Resource: UserSessionResource
+
+
+class GetUserSessionsResponse(BaseModel):
+    Sessions: list[UserSession]
+
+
+class CancelUserSessionResponse(BaseModel):
+    Refunded: bool
+    IsCompletedEarly: bool = False
+    Duration: float = 0.0
 
 
 class GetUserVenuesResponse(BaseModel):

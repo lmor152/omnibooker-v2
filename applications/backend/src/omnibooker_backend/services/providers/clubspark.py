@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, ValidationError
 
 from ...integrations.clubspark.client import ClubsparkAPIError, ClubsparkClient
+from ...integrations.clubspark.models import UserSession
 from ...integrations.clubspark.utils import parse_time_to_minutes, rank_slots
 from ...integrations.stripe.client import StripeAPIError, StripeClient
 from ...services.booking_engine import (
     BookingContext,
     BookingResult,
+    CancelContext,
+    CancelResult,
+    CancelStatus,
+    register_cancel_handler,
     register_provider_handler,
 )
 
 logger = logging.getLogger(__name__)
 
 MAX_SLOT_ATTEMPTS = 3
+# Don't start a cancel this close to the refund deadline: it might land after it.
+CANCEL_SAFETY_MARGIN = timedelta(minutes=5)
 
 
 class _ProviderCardDetails(BaseModel):
@@ -246,10 +255,27 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
                 confirmation_code=confirmation,
                 booked_time=_minutes_to_label(ranked.start_time),
                 booked_resource=ranked.resource.Name,
+                cost=ranked.resource.Cost,
+                currency="GBP",
                 message=(
                     f"Booked {options.courtSlug} {ranked.resource.Name} "
                     f"at {_minutes_to_label(ranked.start_time)}"
                 ),
+                metadata={
+                    "provider": "clubspark",
+                    "venue_slug": options.courtSlug,
+                    "venue_id": venue_settings.Venue.ID,
+                    "resource_id": session.ResourceID or ranked.resource.ID,
+                    # RequestSession's SessionID is the ID CancelUserSession expects.
+                    "session_id": session.SessionID,
+                    "slot_session_id": ranked.resource.SessionID,
+                    "payment_id": payment.ID,
+                    "transaction_id": session.TransactionID,
+                    "date": target_date,
+                    "start_minutes": ranked.start_time,
+                    "duration": duration,
+                    "refund_window": venue_settings.Venue.BookingRefundWindow,
+                },
             )
 
     logger.error(
@@ -262,4 +288,130 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
     )
 
 
+def _cancel_clubspark(context: CancelContext) -> CancelResult:
+    """Cancel a ClubSpark booking, but only while it will still be refunded.
+
+    Cancelling after the venue's RefundDeadline cancels without a refund, so the
+    booking is re-checked first and anything outside the window is left for the
+    user. CancelUserSession is never retried; after an error the booking is
+    looked up again to find out what happened.
+    """
+
+    ref = context.booking_ref or {}
+    session_id = ref.get("session_id")
+    booking_date = ref.get("date")
+    if not session_id or not booking_date:
+        return CancelResult(
+            status=CancelStatus.manual_required,
+            message="Booking has no ClubSpark session id; cancel it in ClubSpark",
+        )
+
+    try:
+        credentials = _resolve_credentials(context.provider.credentials)
+    except ValueError as exc:
+        return CancelResult(status=CancelStatus.manual_required, message=str(exc))
+
+    with ClubsparkClient(credentials.username, credentials.password) as cs_client:
+        try:
+            session = _find_user_session(cs_client, session_id, booking_date)
+        except ClubsparkAPIError as exc:
+            logger.warning("Clubspark booking lookup failed: %s", exc)
+            return CancelResult(
+                status=CancelStatus.failed,
+                message=f"Could not look up the booking: {exc}",
+            )
+
+        if session is None:
+            return CancelResult(
+                status=CancelStatus.manual_required,
+                message="Booking not found in ClubSpark; check it in ClubSpark",
+            )
+        if session.IsDeleted:
+            return CancelResult(
+                status=CancelStatus.cancelled,
+                refunded=session.Refunded,
+                message="Booking was already cancelled",
+            )
+
+        deadline = _refund_deadline_utc(session)
+        if not session.CanCancel:
+            return CancelResult(
+                status=CancelStatus.manual_required,
+                message="ClubSpark does not allow this booking to be cancelled",
+                refund_deadline_utc=deadline,
+            )
+        if deadline is None or context.now_utc >= deadline - CANCEL_SAFETY_MARGIN:
+            return CancelResult(
+                status=CancelStatus.manual_required,
+                message=(
+                    "Past the refund deadline; cancelling now would not be refunded"
+                ),
+                refund_deadline_utc=deadline,
+            )
+
+        logger.info("Cancelling Clubspark session %s", session_id)
+        try:
+            response = cs_client.cancel_user_session(session_id)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Clubspark cancel errored, re-checking booking: %s", exc)
+            return _confirm_cancel_after_error(
+                cs_client, session_id, booking_date, deadline, exc
+            )
+
+    if not response.Refunded:
+        logger.error("Clubspark cancelled session %s without a refund", session_id)
+    return CancelResult(
+        status=CancelStatus.cancelled,
+        refunded=response.Refunded,
+        refund_method="card" if response.Refunded else None,
+        message="Cancelled and refunded" if response.Refunded else "Cancelled without refund",
+        refund_deadline_utc=deadline,
+    )
+
+
+def _find_user_session(
+    cs_client: ClubsparkClient, session_id: str, booking_date: str
+) -> UserSession | None:
+    sessions = cs_client.get_user_sessions(start_date=booking_date).Sessions
+    return next((s for s in sessions if s.ID == session_id), None)
+
+
+def _refund_deadline_utc(session: UserSession) -> datetime | None:
+    if session.RefundDeadline is None:
+        return None
+    deadline = session.RefundDeadline
+    if deadline.tzinfo is None:
+        # Ambiguous local times (clocks going back) resolve to the earlier
+        # instant (fold=0), so we err on stopping auto-cancel too early.
+        deadline = deadline.replace(tzinfo=ZoneInfo(session.Venue.TimeZone))
+    return deadline.astimezone(timezone.utc)
+
+
+def _confirm_cancel_after_error(
+    cs_client: ClubsparkClient,
+    session_id: str,
+    booking_date: str,
+    deadline: datetime | None,
+    error: Exception,
+) -> CancelResult:
+    try:
+        session = _find_user_session(cs_client, session_id, booking_date)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Clubspark re-check failed: %s", exc)
+        session = None
+    if session is not None and session.IsDeleted:
+        return CancelResult(
+            status=CancelStatus.cancelled,
+            refunded=session.Refunded,
+            message="Cancelled (confirmed after an error)",
+            refund_deadline_utc=deadline,
+        )
+    return CancelResult(
+        status=CancelStatus.failed,
+        message=f"Cancel request failed and the booking may still be active: {error}",
+        refund_deadline_utc=deadline,
+    )
+
+
 register_provider_handler("clubspark", _book_clubspark)
+register_cancel_handler("clubspark", _cancel_clubspark)

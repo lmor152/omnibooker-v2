@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from omnibooker_backend import models  # type: ignore[import-not-found]
 from omnibooker_backend.services.booking_engine import (  # type: ignore[import-not-found]
@@ -81,6 +82,9 @@ def test_execute_booking_task_builds_context(db_session: Session) -> None:
             confirmation_code="CONF123",
             booked_time="18:00",
             booked_resource="Court 3",
+            cost=12.5,
+            currency="GBP",
+            metadata={"provider": "test", "session_id": "abc"},
         )
 
     register_provider_handler(provider.type, handler)
@@ -91,6 +95,9 @@ def test_execute_booking_task_builds_context(db_session: Session) -> None:
     assert updated_task.booked_time == "18:00"
     assert updated_task.booked_resource == "Court 3"
     assert updated_task.confirmation_code == "CONF123"
+    assert updated_task.cost == Decimal("12.50")
+    assert updated_task.currency == "GBP"
+    assert updated_task.provider_booking_ref == {"provider": "test", "session_id": "abc"}
     assert "context" in captured
     context = captured["context"]
     assert context.provider.credentials["username"] == "runner"

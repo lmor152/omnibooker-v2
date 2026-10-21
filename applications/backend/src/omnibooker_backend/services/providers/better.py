@@ -1,22 +1,30 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Sequence, cast
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from ...integrations.better.client import BetterAPIError, BetterClient
-from ...integrations.better.models import Activity, Slot
+from ...integrations.better.models import Activity, Booking, Slot
 from ...integrations.better.utils import RankedSlot, rank_slot
 from ...services.booking_engine import (
     BookingContext,
     BookingResult,
+    CancelContext,
+    CancelResult,
+    CancelStatus,
+    register_cancel_handler,
     register_provider_handler,
 )
 
 logger = logging.getLogger(__name__)
 
 MAX_SLOT_ATTEMPTS = 5
+# Don't start a cancel this close to the cut-off: it might land after it.
+CANCEL_SAFETY_MARGIN = timedelta(minutes=5)
 
 
 class _BetterCredentials(BaseModel):
@@ -217,22 +225,36 @@ def _book_better(context: BookingContext) -> BookingResult:
                 attempt,
                 ranked.slot.starts_at.format_24_hour,
             )
-            confirmation = _attempt_better_booking(
+            booking = _attempt_better_booking(
                 better_client,
                 ranked.slot,
                 credits_allowed=options.useCredits,
                 card_cvc=credentials.cardCvc,
                 card_holder_name=card_name,
             )
-            if confirmation:
+            if booking:
                 return BookingResult(
                     success=True,
-                    confirmation_code=confirmation,
+                    confirmation_code=booking.confirmation,
                     booked_time=ranked.slot.starts_at.format_24_hour,
                     booked_resource=ranked.slot.location.name,
+                    cost=booking.total_cost / 100,  # Better amounts are in pence
+                    currency="GBP",
                     message=(
                         f"Booked {options.venueSlug} at {ranked.slot.starts_at.format_24_hour}"
                     ),
+                    metadata={
+                        "provider": "better",
+                        "venue_slug": options.venueSlug,
+                        "activity_slug": options.activitySlug,
+                        "slot_id": ranked.slot.id,
+                        "pricing_option_id": ranked.slot.pricing_option_id,
+                        "date": target_date,
+                        "cart_hash": booking.cart_hash,
+                        "transaction_uuid": booking.transaction_id or None,
+                        "order_id": booking.order_id,
+                        "credits_used": booking.credits_used,
+                    },
                 )
 
     logger.error(
@@ -246,6 +268,16 @@ def _book_better(context: BookingContext) -> BookingResult:
     )
 
 
+@dataclass(frozen=True)
+class _BetterBooking:
+    confirmation: str
+    cart_hash: str
+    transaction_id: str
+    order_id: int | None
+    total_cost: float  # pence
+    credits_used: int  # pence
+
+
 def _attempt_better_booking(
     client: BetterClient,
     slot: Slot,
@@ -253,7 +285,7 @@ def _attempt_better_booking(
     credits_allowed: bool,
     card_cvc: str,
     card_holder_name: str,
-) -> str | None:
+) -> _BetterBooking | None:
     try:
         client.clear_cart()
         cart = client.add_slot_to_cart(slot)
@@ -312,7 +344,7 @@ def _attempt_better_booking(
             return None
 
     try:
-        client.complete_booking(
+        order_id = client.complete_booking(
             transaction_id=transaction_id,
             credits_to_use=credits_to_use,
             cart_hash=cart.itemHash,
@@ -321,7 +353,126 @@ def _attempt_better_booking(
         logger.warning("Better booking completion failed: %s", exc)
         return None
 
-    return transaction_id or cart.itemHash
+    return _BetterBooking(
+        confirmation=transaction_id or cart.itemHash,
+        cart_hash=cart.itemHash,
+        transaction_id=transaction_id,
+        order_id=order_id,
+        total_cost=total_cost,
+        credits_used=credits_to_use,
+    )
+
+
+def _cancel_better(context: CancelContext) -> CancelResult:
+    """Cancel a Better booking, but only before its penalty-free cut-off.
+
+    After the cut-off Better charges a fee and refunds nothing, so the booking
+    is re-checked first and anything past it is left for the user. The cancel
+    is never retried; after an error the booking is looked up again.
+    """
+
+    ref = context.booking_ref or {}
+    order_id = ref.get("order_id")
+    slot_id = ref.get("slot_id")
+    if not order_id and not slot_id:
+        return CancelResult(
+            status=CancelStatus.manual_required,
+            message="Booking has no Better order id; cancel it in Better",
+        )
+
+    try:
+        credentials = _BetterCredentials.from_raw(context.provider.credentials)
+    except ValidationError:
+        return CancelResult(
+            status=CancelStatus.manual_required,
+            message="Invalid Better provider configuration",
+        )
+
+    with BetterClient(credentials.username, credentials.password) as better_client:
+        try:
+            booking = _find_booking(better_client, context.now_utc, order_id, slot_id)
+        except BetterAPIError as exc:
+            logger.warning("Better booking lookup failed: %s", exc)
+            return CancelResult(
+                status=CancelStatus.failed,
+                message=f"Could not look up the booking: {exc}",
+            )
+
+        if booking is None:
+            return CancelResult(
+                status=CancelStatus.manual_required,
+                message="Booking not found in Better (it may already be cancelled)",
+            )
+
+        cancellation = booking.cancellation
+        cut_off = cancellation.cut_off
+        if not cancellation.can_cancel:
+            return CancelResult(
+                status=CancelStatus.manual_required,
+                message=cancellation.cannot_cancel_reason
+                or "Better does not allow this booking to be cancelled",
+                refund_deadline_utc=cut_off,
+            )
+        if cut_off is None or context.now_utc >= cut_off - CANCEL_SAFETY_MARGIN:
+            return CancelResult(
+                status=CancelStatus.manual_required,
+                message="Past the cancellation cut-off; cancelling now would incur a fee",
+                refund_deadline_utc=cut_off,
+            )
+
+        logger.info("Cancelling Better booking %s", booking.id)
+        try:
+            better_client.cancel_bookings([booking.id])
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Better cancel errored, re-checking booking: %s", exc)
+            try:
+                still_booked = _find_booking(
+                    better_client, context.now_utc, order_id, slot_id
+                )
+            except Exception:  # pylint: disable=broad-except
+                still_booked = booking
+            if still_booked is None:
+                return CancelResult(
+                    status=CancelStatus.cancelled,
+                    refunded=cancellation.awards_credit,
+                    refund_method="credit" if cancellation.awards_credit else None,
+                    message="Cancelled (confirmed after an error)",
+                    refund_deadline_utc=cut_off,
+                )
+            return CancelResult(
+                status=CancelStatus.failed,
+                message=f"Cancel request failed and the booking may still be active: {exc}",
+                refund_deadline_utc=cut_off,
+            )
+
+    return CancelResult(
+        status=CancelStatus.cancelled,
+        refunded=cancellation.awards_credit,
+        refund_method="credit" if cancellation.awards_credit else None,
+        message="Cancelled; refunded as Better credit"
+        if cancellation.awards_credit
+        else "Cancelled",
+        refund_deadline_utc=cut_off,
+    )
+
+
+def _find_booking(
+    client: BetterClient,
+    now_utc: datetime,
+    order_id: int | None,
+    slot_id: str | None,
+) -> Booking | None:
+    """Find an active booking by order id (preferred) or slot/occurrence id."""
+
+    for booking in client.list_bookings(starts_after=now_utc):
+        if booking.status == "cancelled":
+            continue
+        if order_id and booking.order_id == order_id:
+            return booking
+        if slot_id and booking.occurrence_id == str(slot_id):
+            return booking
+    return None
 
 
 register_provider_handler("better", _book_better)
+register_cancel_handler("better", _cancel_better)
