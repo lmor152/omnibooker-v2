@@ -1,11 +1,8 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .config import get_settings
-from .database import Base, engine
 from .routers import auth, booking_slots, booking_tasks, providers
 
 
@@ -16,12 +13,8 @@ def _health_check() -> dict[str, str]:
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        Base.metadata.create_all(bind=engine)
-        yield
-
-    app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
+    # The schema is managed by Alembic: run `python -m omnibooker_backend.migrate`.
+    app = FastAPI(title=settings.app_name, version=__version__)
 
     app.add_middleware(
         CORSMiddleware,

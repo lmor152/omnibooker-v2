@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     auth0_algorithm: str = "RS256"
     auth0_required_role: str | None = None
     auth0_roles_claim: str | None = "permissions"
+    # Fernet key used to encrypt secrets (e.g. Slack webhook URLs) at rest.
+    omnibooker_encryption_key: str | None = None
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod

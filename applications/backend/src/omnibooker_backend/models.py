@@ -2,7 +2,20 @@ import enum
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text
+from decimal import Decimal
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -134,6 +147,10 @@ class BookingTask(Base):
     booked_time: Mapped[Optional[str]] = mapped_column(String(5))
     booked_resource: Mapped[Optional[str]] = mapped_column(String(255))
     confirmation_code: Mapped[Optional[str]] = mapped_column(String(255))
+    # Provider-specific identifiers needed to look up or cancel the booking later.
+    provider_booking_ref: Mapped[Optional[dict]] = mapped_column(JSON)
+    cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    currency: Mapped[Optional[str]] = mapped_column(String(3))
     attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
