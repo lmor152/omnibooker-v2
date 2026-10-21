@@ -4,6 +4,7 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 from omnibooker_backend import models  # type: ignore[import-not-found]  # noqa: F401
@@ -42,7 +43,7 @@ def test_pre_alembic_database_is_stamped_then_upgraded(db_url: str) -> None:
     assert {"provider_booking_ref", "cost", "currency"} <= columns
     with engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert version == "0002"
+    assert version == ScriptDirectory.from_config(_alembic_config(db_url)).get_current_head()
 
 
 def test_pre_alembic_database_with_drift_is_rejected(db_url: str) -> None:

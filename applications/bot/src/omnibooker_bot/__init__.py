@@ -1,0 +1,1 @@
+"""Omnibooker Discord bot."""

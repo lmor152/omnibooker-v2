@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence, cast
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -233,6 +233,7 @@ def _book_better(context: BookingContext) -> BookingResult:
                 card_holder_name=card_name,
             )
             if booking:
+                cut_off = _lookup_cut_off(better_client, booking.order_id)
                 return BookingResult(
                     success=True,
                     confirmation_code=booking.confirmation,
@@ -254,6 +255,7 @@ def _book_better(context: BookingContext) -> BookingResult:
                         "transaction_uuid": booking.transaction_id or None,
                         "order_id": booking.order_id,
                         "credits_used": booking.credits_used,
+                        "refund_deadline_utc": cut_off.isoformat() if cut_off else None,
                     },
                 )
 
@@ -454,6 +456,22 @@ def _cancel_better(context: CancelContext) -> CancelResult:
         else "Cancelled",
         refund_deadline_utc=cut_off,
     )
+
+
+def _lookup_cut_off(client: BetterClient, order_id: int | None) -> datetime | None:
+    """Best-effort: the new booking's penalty-free cancellation cut-off."""
+
+    if not order_id:
+        return None
+    try:
+        bookings = client.list_bookings(starts_after=datetime.now(timezone.utc))
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Could not look up Better cancellation cut-off: %s", exc)
+        return None
+    for listed in bookings:
+        if listed.order_id == order_id:
+            return listed.cancellation.cut_off
+    return None
 
 
 def _find_booking(

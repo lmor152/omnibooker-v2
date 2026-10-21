@@ -51,7 +51,7 @@ class _FakeClubsparkClient:
             Name="Court 1",
         )
         time_slot = SimpleNamespace(Time=540, Resources=[resource])
-        return SimpleNamespace(Times=[time_slot])
+        return SimpleNamespace(Result=0, Times=[time_slot])
 
     def get_app_settings(self, *_args: Any, **_kwargs: Any):
         venue = SimpleNamespace(
@@ -223,3 +223,18 @@ def test_clubspark_provider_requires_slug(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert result.success is False
     assert "court slug" in (result.message or "").lower()
+
+
+def test_clubspark_explains_refused_availability(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _AtDailyLimit(_FakeClubsparkClient):
+        def get_availability_times(self, *_args: Any, **_kwargs: Any):
+            # What ClubSpark returns once the account holds the venue's MaximumBookings.
+            return SimpleNamespace(Result=-1, Times=[])
+
+    monkeypatch.setattr(clubspark, "ClubsparkClient", _AtDailyLimit)
+    monkeypatch.setattr(clubspark, "StripeClient", _stripe_factory)
+
+    result = clubspark._book_clubspark(_make_context({"courtSlug": "finsburypark"}))
+
+    assert result.success is False
+    assert "maximum bookings" in (result.message or "")

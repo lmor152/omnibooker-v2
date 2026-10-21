@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .. import crud, models, schemas
 from ..database import get_db
 from ..security import get_current_active_user
+from ..services import confirmation
 from ..services.executor import BookingExecutionError, execute_booking_task
 from ..services.scheduler import sync_pending_tasks
 
@@ -85,6 +86,50 @@ async def cancel_booking_task(
     if slot and slot.is_active:
         sync_pending_tasks(db, slot, reset_existing=True)
     return task
+
+
+@router.post("/{task_id}/confirm", response_model=schemas.BookingTaskRead)
+async def confirm_booking(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Keep a booking that is awaiting confirmation."""
+
+    _own_task(db, current_user, task_id)
+    actor = confirmation.Actor(label="web", user_id=current_user.id)
+    return _decide(lambda: confirmation.confirm(db, task_id, actor))
+
+
+@router.post("/{task_id}/cancel-booking", response_model=schemas.BookingTaskRead)
+def cancel_booking_with_provider(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Cancel a made booking with its provider (unlike /cancel, which skips a pending task)."""
+
+    _own_task(db, current_user, task_id)
+    actor = confirmation.Actor(label="web", user_id=current_user.id)
+    return _decide(lambda: confirmation.request_cancel(db, task_id, actor))
+
+
+def _own_task(db: Session, user: models.User, task_id: int) -> models.BookingTask:
+    task = crud.get_booking_task(db, user_id=user.id, task_id=task_id)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Booking task not found"
+        )
+    return task
+
+
+def _decide(decision):
+    try:
+        return decision()
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except confirmation.DecisionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/{task_id}/execute", response_model=schemas.BookingTaskRead)

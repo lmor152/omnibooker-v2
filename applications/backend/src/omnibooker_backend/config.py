@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     auth0_roles_claim: str | None = "permissions"
     # Fernet key used to encrypt secrets (e.g. Slack webhook URLs) at rest.
     omnibooker_encryption_key: str | None = None
+    discord_bot_token: str | None = None
+    discord_application_id: str | None = None
+    anthropic_api_key: str | None = None
+    assistant_model: str = "claude-sonnet-5-5"
+    # Used for links in chat messages.
+    frontend_url: str | None = None
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod

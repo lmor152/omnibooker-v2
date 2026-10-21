@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from omnibooker_backend import models
 from omnibooker_backend.database import SessionLocal
+from omnibooker_backend.services.actions import process_due_actions
 from omnibooker_backend.services.executor import (
     BookingExecutionError,
     execute_booking_task,
@@ -41,7 +42,14 @@ class BookingTaskWorker:
 
     def run_once(self) -> int:
         with SessionLocal() as session:
-            return self._process_due_tasks(session)
+            # Bookings first: release-time attempts must never wait on chat messages.
+            processed = self._process_due_tasks(session)
+        with SessionLocal() as session:
+            try:
+                processed += process_due_actions(session, limit=self.settings.batch_size)
+            except Exception:  # pragma: no cover - keep the booking loop alive
+                logger.exception("Processing scheduled actions failed")
+        return processed
 
     def _process_due_tasks(self, db: Session) -> int:
         now = datetime.now(timezone.utc)

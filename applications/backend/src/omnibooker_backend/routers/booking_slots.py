@@ -37,6 +37,7 @@ async def create_booking_slot(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Provider not found"
         )
 
+    _check_destination(db, current_user.id, slot_in.notify_destination_id)
     slot = crud.create_booking_slot(db, user_id=current_user.id, slot_in=slot_in)
     if slot.is_active:
         sync_pending_tasks(db, slot, reset_existing=True)
@@ -66,6 +67,7 @@ async def update_booking_slot(
             )
 
     was_active = slot.is_active
+    _check_destination(db, current_user.id, slot_in.notify_destination_id)
     slot = crud.update_booking_slot(db, slot, slot_in)
 
     if was_active and not slot.is_active:
@@ -156,3 +158,13 @@ async def resync_booking_tasks(
     sync_pending_tasks(db, slot, count=count, reset_existing=True)
     db.refresh(slot)
     return slot
+
+
+def _check_destination(db: Session, user_id: int, destination_id: int | None) -> None:
+    if destination_id is None:
+        return
+    destination = db.get(models.ChatDestination, destination_id)
+    if destination is None or destination.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown notification channel"
+        )

@@ -120,6 +120,12 @@ def create_booking_slot(
         release_days_before=slot_in.release_days_before,
         release_time=slot_in.release_time,
         provider_options=slot_in.provider_options,
+        notifications_enabled=slot_in.notifications_enabled,
+        notify_destination_id=slot_in.notify_destination_id,
+        auto_cancel_enabled=slot_in.auto_cancel_enabled,
+        confirm_deadline_hours=slot_in.confirm_deadline_hours,
+        reminder_hours=slot_in.reminder_hours,
+        confirmation_policy=slot_in.confirmation_policy,
     )
     db.add(slot)
     db.commit()
