@@ -105,17 +105,24 @@ export function BookingConfirmation({ task, timezone, onConfirm, onCancelBooking
                     {busy === "cancel" ? "Cancelling…" : "Cancel booking"}
                   </button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
+                <AlertDialogContent className="bg-white border-gray-200 text-gray-800">
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
-                    <AlertDialogDescription>
+                    <AlertDialogTitle className="text-lg font-semibold text-gray-900">
+                      Cancel this booking?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-sm text-gray-600">
                       This cancels {task.bookedResource ?? "the booking"} with the provider. It's only cancelled
                       automatically while it can still be refunded; otherwise you'll be asked to cancel it yourself.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Keep it</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => act("cancel", onCancelBooking)}>
+                    <AlertDialogCancel className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                      Keep it
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => act("cancel", onCancelBooking)}
+                      className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                    >
                       Cancel booking
                     </AlertDialogAction>
                   </AlertDialogFooter>
