@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import type { BookingTask, BookingSlot, Provider } from "../../types";
+import { BookingConfirmation } from "./BookingConfirmation";
 
 interface UpcomingTasksProps {
   bookingTasks: BookingTask[];
@@ -25,6 +26,8 @@ interface UpcomingTasksProps {
   onReactivateTask: (taskId: number) => Promise<void>;
   onDeleteTask: (taskId: number) => Promise<void>;
   onExecuteTask: (taskId: number) => Promise<void>;
+  onConfirmBooking: (taskId: number) => Promise<void>;
+  onCancelBooking: (taskId: number) => Promise<void>;
 }
 
 export function UpcomingTasks({
@@ -35,6 +38,8 @@ export function UpcomingTasks({
   onReactivateTask,
   onDeleteTask,
   onExecuteTask,
+  onConfirmBooking,
+  onCancelBooking,
 }: UpcomingTasksProps) {
   const [filterProvider, setFilterProvider] = useState<string>("all");
   const [filterSession, setFilterSession] = useState<string>("all");
@@ -76,7 +81,12 @@ export function UpcomingTasks({
 
   const pendingTasks = sortedTasks.filter((task) => task.status === "pending");
   const processingTasks = sortedTasks.filter((task) => task.status === "processing");
-  const completedTasks = sortedTasks.filter((task) => task.status === "success");
+  const awaitingTasks = sortedTasks.filter(
+    (task) => task.status === "success" && task.confirmationStatus === "awaiting",
+  );
+  const completedTasks = sortedTasks.filter(
+    (task) => task.status === "success" && task.confirmationStatus !== "awaiting",
+  );
   const failedTasks = sortedTasks.filter((task) => task.status === "failed");
   const cancelledTasks = sortedTasks.filter((task) => task.status === "cancelled");
 
@@ -277,6 +287,26 @@ export function UpcomingTasks({
       </div>
 
       {/* Pending Tasks */}
+      {awaitingTasks.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Needs your confirmation</h3>
+          <div className="space-y-3">
+            {awaitingTasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
+                provider={providers.find(
+                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
+                )}
+                onConfirmBooking={() => onConfirmBooking(task.id)}
+                onCancelBooking={() => onCancelBooking(task.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {pendingTasks.length > 0 && (
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4 text-gray-800">Pending Tasks</h3>
@@ -351,6 +381,8 @@ export function UpcomingTasks({
                   (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
                 )}
                 onDelete={() => onDeleteTask(task.id)}
+                onConfirmBooking={() => onConfirmBooking(task.id)}
+                onCancelBooking={() => onCancelBooking(task.id)}
               />
             ))}
           </div>
@@ -447,6 +479,8 @@ function TaskCard({
   onReactivate,
   onExecute,
   onDelete,
+  onConfirmBooking,
+  onCancelBooking,
 }: {
   task: BookingTask;
   slot?: BookingSlot;
@@ -455,6 +489,8 @@ function TaskCard({
   onReactivate?: () => void;
   onExecute?: () => void;
   onDelete?: () => void;
+  onConfirmBooking?: () => Promise<void>;
+  onCancelBooking?: () => Promise<void>;
 }) {
   const iconBackgroundClasses: Record<string, string> = {
     pending: "bg-blue-500",
@@ -573,15 +609,12 @@ function TaskCard({
 
       {/* Booked Details */}
       {task.status === "success" && (task.bookedTime || task.bookedResource) && (
-        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
-          <span className="font-medium">Booked:</span>{" "}
-          {[task.bookedResource, task.bookedTime && `at ${task.bookedTime}`].filter(Boolean).join(" ")}
-          {task.confirmationCode && (
-            <span className="block text-xs text-green-700 mt-1 break-all">
-              Ref: {task.confirmationCode}
-            </span>
-          )}
-        </div>
+        <BookingConfirmation
+          task={task}
+          timezone={timezoneDisplay}
+          onConfirm={onConfirmBooking}
+          onCancelBooking={onCancelBooking}
+        />
       )}
 
       {/* Error Message */}

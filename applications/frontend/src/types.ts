@@ -77,6 +77,12 @@ export interface BookingSlot {
   releaseDaysBefore: number;
   releaseTime?: string | null;
   providerOptions: ProviderOptions;
+  notificationsEnabled?: boolean | null;
+  notifyDestinationId?: number | null;
+  autoCancelEnabled?: boolean | null;
+  confirmDeadlineHours?: number | null;
+  reminderHours?: number[] | null;
+  confirmationPolicy?: ConfirmationPolicy;
   createdAt: string;
 }
 
@@ -97,7 +103,25 @@ export interface BookingSlotInput {
   releaseDaysBefore: number;
   releaseTime?: string | null;
   providerOptions: ProviderOptions;
+  notificationsEnabled?: boolean | null;
+  notifyDestinationId?: number | null;
+  autoCancelEnabled?: boolean | null;
+  confirmDeadlineHours?: number | null;
+  reminderHours?: number[] | null;
+  confirmationPolicy?: ConfirmationPolicy;
 }
+
+export type ConfirmationPolicy = "owner_only" | "anyone";
+
+export type ConfirmationStatus =
+  | "not_required"
+  | "awaiting"
+  | "confirmed"
+  | "auto_kept"
+  | "cancel_pending"
+  | "cancelled"
+  | "cancel_failed"
+  | "manual_cancel_required";
 
 export type BookingTaskStatus = "pending" | "processing" | "success" | "failed" | "cancelled";
 
@@ -112,5 +136,46 @@ export interface BookingTask {
   bookedTime?: string | null;
   bookedResource?: string | null;
   confirmationCode?: string | null;
+  cost?: number | null;
+  currency?: string | null;
+  confirmationStatus: ConfirmationStatus;
+  confirmDeadlineAt?: string | null;
+  refundDeadlineAt?: string | null;
+  confirmedAt?: string | null;
+  confirmedBy?: string | null;
+  cancelledAt?: string | null;
+  cancelMessage?: string | null;
   createdAt: string;
+}
+
+export interface UserPreferences {
+  notificationsEnabled: boolean;
+  autoCancelDefault: boolean;
+  /** Hours before the session start; null derives the deadline from the provider's refund deadline. */
+  confirmDeadlineHours: number | null;
+  refundBufferHours: number;
+  /** Hours before the confirm deadline. */
+  reminderHours: number[];
+  shortNoticeMinHours: number;
+  defaultDestinationId: number | null;
+}
+
+export interface ChatIdentity {
+  id: number;
+  platform: string;
+  externalUsername?: string | null;
+  linkedAt: string;
+}
+
+export interface ChatDestination {
+  id: number;
+  platform: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface ChatLinkCode {
+  code: string;
+  expiresAt: string;
+  botInviteUrl?: string | null;
 }

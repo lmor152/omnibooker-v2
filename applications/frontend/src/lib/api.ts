@@ -2,9 +2,13 @@ import type {
   BookingSlot,
   BookingSlotInput,
   BookingTask,
+  ChatDestination,
+  ChatIdentity,
+  ChatLinkCode,
   Provider,
   ProviderInput,
   User,
+  UserPreferences,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api";
@@ -45,6 +49,12 @@ type BookingSlotDto = {
   release_days_before: number;
   release_time?: string | null;
   provider_options: BookingSlot["providerOptions"];
+  notifications_enabled?: boolean | null;
+  notify_destination_id?: number | null;
+  auto_cancel_enabled?: boolean | null;
+  confirm_deadline_hours?: number | null;
+  reminder_hours?: number[] | null;
+  confirmation_policy?: BookingSlot["confirmationPolicy"];
   created_at: string;
 };
 
@@ -59,6 +69,39 @@ type BookingTaskDto = {
   booked_time?: string | null;
   booked_resource?: string | null;
   confirmation_code?: string | null;
+  cost?: number | null;
+  currency?: string | null;
+  confirmation_status: BookingTask["confirmationStatus"];
+  confirm_deadline_at?: string | null;
+  refund_deadline_at?: string | null;
+  confirmed_at?: string | null;
+  confirmed_by?: string | null;
+  cancelled_at?: string | null;
+  cancel_message?: string | null;
+  created_at: string;
+};
+
+type UserPreferencesDto = {
+  notifications_enabled: boolean;
+  auto_cancel_default: boolean;
+  confirm_deadline_hours: number | null;
+  refund_buffer_hours: number;
+  reminder_hours: number[];
+  short_notice_min_hours: number;
+  default_destination_id: number | null;
+};
+
+type ChatIdentityDto = {
+  id: number;
+  platform: string;
+  external_username?: string | null;
+  linked_at: string;
+};
+
+type ChatDestinationDto = {
+  id: number;
+  platform: string;
+  name: string;
   created_at: string;
 };
 
@@ -137,6 +180,12 @@ function mapBookingSlot(dto: BookingSlotDto): BookingSlot {
     releaseDaysBefore: dto.release_days_before,
     releaseTime: dto.release_time ?? undefined,
     providerOptions: dto.provider_options ?? {},
+    notificationsEnabled: dto.notifications_enabled ?? null,
+    notifyDestinationId: dto.notify_destination_id ?? null,
+    autoCancelEnabled: dto.auto_cancel_enabled ?? null,
+    confirmDeadlineHours: dto.confirm_deadline_hours ?? null,
+    reminderHours: dto.reminder_hours ?? null,
+    confirmationPolicy: dto.confirmation_policy ?? "owner_only",
     createdAt: dto.created_at,
   };
 }
@@ -153,7 +202,28 @@ function mapBookingTask(dto: BookingTaskDto): BookingTask {
     bookedTime: dto.booked_time ?? undefined,
     bookedResource: dto.booked_resource ?? undefined,
     confirmationCode: dto.confirmation_code ?? undefined,
+    cost: dto.cost ?? undefined,
+    currency: dto.currency ?? undefined,
+    confirmationStatus: dto.confirmation_status ?? "not_required",
+    confirmDeadlineAt: dto.confirm_deadline_at ?? undefined,
+    refundDeadlineAt: dto.refund_deadline_at ?? undefined,
+    confirmedAt: dto.confirmed_at ?? undefined,
+    confirmedBy: dto.confirmed_by ?? undefined,
+    cancelledAt: dto.cancelled_at ?? undefined,
+    cancelMessage: dto.cancel_message ?? undefined,
     createdAt: dto.created_at,
+  };
+}
+
+function mapPreferences(dto: UserPreferencesDto): UserPreferences {
+  return {
+    notificationsEnabled: dto.notifications_enabled,
+    autoCancelDefault: dto.auto_cancel_default,
+    confirmDeadlineHours: dto.confirm_deadline_hours,
+    refundBufferHours: dto.refund_buffer_hours,
+    reminderHours: dto.reminder_hours,
+    shortNoticeMinHours: dto.short_notice_min_hours,
+    defaultDestinationId: dto.default_destination_id,
   };
 }
 
@@ -175,6 +245,12 @@ function serializeSlotPayload(input: Partial<BookingSlotInput>): Record<string, 
   if (input.releaseDaysBefore !== undefined) payload.release_days_before = input.releaseDaysBefore;
   if (input.releaseTime !== undefined) payload.release_time = input.releaseTime;
   if (input.providerOptions !== undefined) payload.provider_options = input.providerOptions;
+  if (input.notificationsEnabled !== undefined) payload.notifications_enabled = input.notificationsEnabled;
+  if (input.notifyDestinationId !== undefined) payload.notify_destination_id = input.notifyDestinationId;
+  if (input.autoCancelEnabled !== undefined) payload.auto_cancel_enabled = input.autoCancelEnabled;
+  if (input.confirmDeadlineHours !== undefined) payload.confirm_deadline_hours = input.confirmDeadlineHours;
+  if (input.reminderHours !== undefined) payload.reminder_hours = input.reminderHours;
+  if (input.confirmationPolicy !== undefined) payload.confirmation_policy = input.confirmationPolicy;
   return payload;
 }
 
@@ -344,4 +420,103 @@ export async function resyncBookingSlot(
   });
   const data = await handleResponse<BookingSlotDto>(response);
   return mapBookingSlot(data);
+}
+
+export async function confirmBooking(token: string, taskId: number): Promise<BookingTask> {
+  const response = await fetch(`${API_BASE_URL}/booking-tasks/${taskId}/confirm`, {
+    method: "POST",
+    headers: buildHeaders(token),
+  });
+  return mapBookingTask(await handleResponse<BookingTaskDto>(response));
+}
+
+/** Cancel a made booking with the provider (unlike cancelBookingTask, which skips a pending task). */
+export async function cancelBookingWithProvider(token: string, taskId: number): Promise<BookingTask> {
+  const response = await fetch(`${API_BASE_URL}/booking-tasks/${taskId}/cancel-booking`, {
+    method: "POST",
+    headers: buildHeaders(token),
+  });
+  return mapBookingTask(await handleResponse<BookingTaskDto>(response));
+}
+
+export async function fetchPreferences(token: string): Promise<UserPreferences> {
+  const response = await fetch(`${API_BASE_URL}/me/preferences`, { headers: buildHeaders(token) });
+  return mapPreferences(await handleResponse<UserPreferencesDto>(response));
+}
+
+export async function updatePreferences(
+  token: string,
+  updates: Partial<UserPreferences>,
+): Promise<UserPreferences> {
+  const payload: Record<string, unknown> = {};
+  if (updates.notificationsEnabled !== undefined) payload.notifications_enabled = updates.notificationsEnabled;
+  if (updates.autoCancelDefault !== undefined) payload.auto_cancel_default = updates.autoCancelDefault;
+  if (updates.confirmDeadlineHours !== undefined) payload.confirm_deadline_hours = updates.confirmDeadlineHours;
+  if (updates.refundBufferHours !== undefined) payload.refund_buffer_hours = updates.refundBufferHours;
+  if (updates.reminderHours !== undefined) payload.reminder_hours = updates.reminderHours;
+  if (updates.shortNoticeMinHours !== undefined) payload.short_notice_min_hours = updates.shortNoticeMinHours;
+  if (updates.defaultDestinationId !== undefined) payload.default_destination_id = updates.defaultDestinationId;
+  const response = await fetch(`${API_BASE_URL}/me/preferences`, {
+    method: "PUT",
+    headers: buildHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  return mapPreferences(await handleResponse<UserPreferencesDto>(response));
+}
+
+export async function createDiscordLinkCode(token: string): Promise<ChatLinkCode> {
+  const response = await fetch(`${API_BASE_URL}/chat/discord/link-code`, {
+    method: "POST",
+    headers: buildHeaders(token),
+  });
+  const data = await handleResponse<{ code: string; expires_at: string; bot_invite_url?: string | null }>(
+    response,
+  );
+  return { code: data.code, expiresAt: data.expires_at, botInviteUrl: data.bot_invite_url };
+}
+
+export async function fetchChatIdentities(token: string): Promise<ChatIdentity[]> {
+  const response = await fetch(`${API_BASE_URL}/chat/identities`, { headers: buildHeaders(token) });
+  const data = await handleResponse<ChatIdentityDto[]>(response);
+  return data.map((dto) => ({
+    id: dto.id,
+    platform: dto.platform,
+    externalUsername: dto.external_username,
+    linkedAt: dto.linked_at,
+  }));
+}
+
+export async function deleteChatIdentity(token: string, identityId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/chat/identities/${identityId}`, {
+    method: "DELETE",
+    headers: buildHeaders(token),
+  });
+  await handleResponse<undefined>(response);
+}
+
+export async function fetchChatDestinations(token: string): Promise<ChatDestination[]> {
+  const response = await fetch(`${API_BASE_URL}/chat/destinations`, { headers: buildHeaders(token) });
+  const data = await handleResponse<ChatDestinationDto[]>(response);
+  return data.map((dto) => ({
+    id: dto.id,
+    platform: dto.platform,
+    name: dto.name,
+    createdAt: dto.created_at,
+  }));
+}
+
+export async function deleteChatDestination(token: string, destinationId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/chat/destinations/${destinationId}`, {
+    method: "DELETE",
+    headers: buildHeaders(token),
+  });
+  await handleResponse<undefined>(response);
+}
+
+export async function testChatDestination(token: string, destinationId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/chat/destinations/${destinationId}/test`, {
+    method: "POST",
+    headers: buildHeaders(token),
+  });
+  await handleResponse<undefined>(response);
 }
