@@ -8,6 +8,7 @@ from typing import cast
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models
+from . import confirmation
 from .scheduler import _slot_timezone
 from .booking_engine import (
     BookingContext,
@@ -89,6 +90,12 @@ def execute_booking_task(db: Session, task: models.BookingTask) -> models.Bookin
     db.refresh(task)
 
     _log_success(task, result)
+    try:
+        confirmation.on_booking_success(db, task)
+    except Exception:  # pylint: disable=broad-except
+        # Never let notification set-up undo a successful booking.
+        logger.exception("Could not set up confirmation for task %s", task.id)
+        db.rollback()
     return task
 
 

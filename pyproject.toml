@@ -8,5 +8,6 @@ requires-python = ">=3.11"
 [tool.uv.workspace]
 members = [
   "applications/backend",
-  "applications/worker"
+  "applications/worker",
+  "applications/bot"
 ]

@@ -155,6 +155,15 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
             logger.warning("Clubspark API failure: %s", exc)
             return BookingResult(success=False, message=str(exc))
 
+        if availability.Result < 0:
+            # Seen when the account already holds the venue's MaximumBookings for the day.
+            return BookingResult(
+                success=False,
+                message=(
+                    "ClubSpark refused to show availability; the account may already "
+                    "have the venue's maximum bookings for that day"
+                ),
+            )
         if not availability.Times:
             return BookingResult(
                 success=False, message="No availability returned by Clubspark"
@@ -275,6 +284,11 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
                     "start_minutes": ranked.start_time,
                     "duration": duration,
                     "refund_window": venue_settings.Venue.BookingRefundWindow,
+                    # BookingRefundWindow is in hours before the session start.
+                    "refund_deadline_utc": (
+                        context.task.scheduled_start_utc
+                        - timedelta(hours=venue_settings.Venue.BookingRefundWindow)
+                    ).isoformat(),
                 },
             )
 
