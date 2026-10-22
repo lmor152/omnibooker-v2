@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Calendar, CalendarSync, Plus, Edit2, Trash2, Power, PowerOff, RefreshCw } from "lucide-react";
-import type { BookingSlot, BookingSlotInput, ChatDestination, Provider } from "../../types";
+import type { BookingSlot, BookingSlotInput, ChatDestination, Provider, UserPreferences } from "../../types";
 import { SessionModal } from "./SessionModal";
 
 interface SessionManagerProps {
   bookingSlots: BookingSlot[];
   providers: Provider[];
   destinations: ChatDestination[];
+  preferences: UserPreferences | null;
   onAddSlot: (slot: BookingSlotInput) => Promise<void>;
   onUpdateSlot: (id: number, updates: Partial<BookingSlotInput>) => Promise<void>;
   onDeleteSlot: (id: number) => Promise<void>;
@@ -21,6 +22,7 @@ export function SessionManager({
   bookingSlots,
   providers,
   destinations,
+  preferences,
   onAddSlot,
   onUpdateSlot,
   onDeleteSlot,
@@ -172,6 +174,7 @@ export function SessionManager({
           slot={editingSlot}
           providers={providers}
           destinations={destinations}
+          preferences={preferences}
           onSave={handleSaveSession}
           onClose={() => setIsModalOpen(false)}
           onTest={onTestSlot}

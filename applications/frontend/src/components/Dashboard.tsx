@@ -5,6 +5,7 @@ import type {
   BookingSlotInput,
   BookingTask,
   ChatDestination,
+  UserPreferences,
   Provider,
   ProviderInput,
 } from "../types";
@@ -156,6 +157,7 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
   const [bookingSlots, setBookingSlots] = useState<BookingSlot[]>([]);
   const [bookingTasks, setBookingTasks] = useState<BookingTask[]>([]);
   const [destinations, setDestinations] = useState<ChatDestination[]>([]);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(isAuthenticated);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,16 +177,18 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
 
       try {
         const token = await getAccessToken();
-        const [providersData, slotData, taskData, destinationData] = await Promise.all([
+        const [providersData, slotData, taskData, destinationData, preferencesData] = await Promise.all([
           api.fetchProviders(token),
           api.fetchBookingSlots(token),
           api.fetchBookingTasks(token),
           api.fetchChatDestinations(token),
+          api.fetchPreferences(token),
         ]);
         setProviders(providersData);
         setBookingSlots(slotData);
         setBookingTasks(taskData);
         setDestinations(destinationData);
+        setPreferences(preferencesData);
         setError(null);
       } catch (err) {
         setError(getErrorMessage(err));
@@ -642,6 +646,7 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 bookingSlots={bookingSlots}
                 providers={providers}
                 destinations={destinations}
+                preferences={preferences}
                 onAddSlot={handleAddSlot}
                 onUpdateSlot={handleUpdateSlot}
                 onDeleteSlot={handleDeleteSlot}
@@ -664,6 +669,7 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
                 getAccessToken={getAccessToken}
                 destinations={destinations}
                 onDestinationsChange={setDestinations}
+                onPreferencesChange={setPreferences}
               />
             )}
             {activeTab === "guides" && <GuidesTab />}

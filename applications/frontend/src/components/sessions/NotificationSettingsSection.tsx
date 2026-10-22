@@ -1,4 +1,4 @@
-import type { BookingSlotInput, ChatDestination, ConfirmationPolicy } from "../../types";
+import type { BookingSlotInput, ChatDestination, ConfirmationPolicy, UserPreferences } from "../../types";
 import { ChipsList } from "../ChipsList";
 
 type NotificationFields = Pick<
@@ -14,21 +14,27 @@ type NotificationFields = Pick<
 interface NotificationSettingsSectionProps {
   value: NotificationFields;
   destinations: ChatDestination[];
+  /** The user's defaults, used to show what "Default" means and which fields apply. */
+  defaults: UserPreferences | null;
   onChange: (updates: Partial<NotificationFields>) => void;
   onError: (message: string | null) => void;
 }
 
 const selectClass =
-  "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm";
+  "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed";
 
 /** Session-level overrides for notifications and booking confirmation. Empty means "use my default". */
 export function NotificationSettingsSection({
   value,
   destinations,
+  defaults,
   onChange,
   onError,
 }: NotificationSettingsSectionProps) {
-  const autoCancelOff = value.autoCancelEnabled === false;
+  const defaultNotifications = defaults?.notificationsEnabled ?? true;
+  const defaultAutoCancel = defaults?.autoCancelDefault ?? false;
+  const notificationsOff = !(value.notificationsEnabled ?? defaultNotifications);
+  const autoCancelOff = !(value.autoCancelEnabled ?? defaultAutoCancel);
 
   return (
     <details className="border border-gray-200 rounded-lg" open={hasOverrides(value)}>
@@ -42,11 +48,11 @@ export function NotificationSettingsSection({
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Discord channel</label>
+          <Field label="Discord channel" disabled={notificationsOff}>
             <select
               className={selectClass}
               value={value.notifyDestinationId ?? ""}
+              disabled={notificationsOff}
               onChange={(event) =>
                 onChange({ notifyDestinationId: event.target.value ? Number(event.target.value) : null })
               }
@@ -58,22 +64,23 @@ export function NotificationSettingsSection({
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
 
           <TriState
             label="Post booking updates"
             value={value.notificationsEnabled}
+            defaultValue={defaultNotifications}
             onChange={(notificationsEnabled) => onChange({ notificationsEnabled })}
           />
 
           <TriState
             label="Ask me to confirm (auto-cancel if not)"
             value={value.autoCancelEnabled}
+            defaultValue={defaultAutoCancel}
             onChange={(autoCancelEnabled) => onChange({ autoCancelEnabled })}
           />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Who can confirm</label>
+          <Field label="Who can confirm" disabled={autoCancelOff}>
             <select
               className={selectClass}
               value={value.confirmationPolicy ?? "owner_only"}
@@ -83,10 +90,9 @@ export function NotificationSettingsSection({
               <option value="owner_only">Only me</option>
               <option value="anyone">Anyone in the channel</option>
             </select>
-          </div>
+          </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm by (hours before)</label>
+          <Field label="Confirm by (hours before)" disabled={autoCancelOff}>
             <input
               type="number"
               min={0}
@@ -102,11 +108,21 @@ export function NotificationSettingsSection({
               }
             />
             <p className="mt-1 text-xs text-gray-500">Never later than the provider's refund deadline.</p>
-          </div>
+          </Field>
         </div>
 
+        {autoCancelOff && (
+          <p className="text-xs text-gray-500">
+            Turn on "Ask me to confirm" to choose who can confirm, the deadline and reminders.
+          </p>
+        )}
+
         <div>
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+          <label
+            className={`flex items-center gap-2 text-sm font-medium mb-2 ${
+              autoCancelOff ? "text-gray-400 cursor-not-allowed" : "text-gray-700"
+            }`}
+          >
             <input
               type="checkbox"
               checked={value.reminderHours != null}
@@ -115,7 +131,7 @@ export function NotificationSettingsSection({
             />
             Custom reminders (hours before the deadline)
           </label>
-          {value.reminderHours != null && (
+          {value.reminderHours != null && !autoCancelOff && (
             <ChipsList
               items={value.reminderHours.map(String)}
               onChange={(items) => onChange({ reminderHours: items.map(Number) })}
@@ -135,28 +151,38 @@ export function NotificationSettingsSection({
   );
 }
 
+function Field({ label, disabled, children }: { label: string; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className={`block text-sm font-medium mb-1 ${disabled ? "text-gray-400" : "text-gray-700"}`}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
 function TriState({
   label,
   value,
+  defaultValue,
   onChange,
 }: {
   label: string;
   value: boolean | null | undefined;
+  defaultValue: boolean;
   onChange: (value: boolean | null) => void;
 }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+    <Field label={label}>
       <select
         className={selectClass}
         value={value == null ? "" : value ? "on" : "off"}
         onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "on")}
       >
-        <option value="">Default</option>
+        <option value="">Default ({defaultValue ? "on" : "off"})</option>
         <option value="on">On</option>
         <option value="off">Off</option>
       </select>
-    </div>
+    </Field>
   );
 }
 
