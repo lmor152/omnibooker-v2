@@ -25,7 +25,15 @@ if (audience) {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <Auth0Provider domain={domain} clientId={clientId} authorizationParams={authorizationParams}>
+  // Refresh tokens persisted in localStorage keep the session alive across launches of the
+  // iOS home-screen app, where silent auth via the Auth0 session cookie is blocked by ITP.
+  <Auth0Provider
+    domain={domain}
+    clientId={clientId}
+    authorizationParams={authorizationParams}
+    useRefreshTokens
+    cacheLocation="localstorage"
+  >
     <App />
   </Auth0Provider>,
 );
