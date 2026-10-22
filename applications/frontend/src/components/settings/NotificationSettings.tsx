@@ -11,6 +11,7 @@ interface NotificationSettingsProps {
   getAccessToken: () => Promise<string>;
   destinations: ChatDestination[];
   onDestinationsChange: (destinations: ChatDestination[]) => void;
+  onPreferencesChange: (preferences: UserPreferences) => void;
 }
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unexpected error");
@@ -20,6 +21,7 @@ export function NotificationSettings({
   getAccessToken,
   destinations,
   onDestinationsChange,
+  onPreferencesChange,
 }: NotificationSettingsProps) {
   const [prefs, setPrefs] = useState<UserPreferences | null>(null);
   const [identities, setIdentities] = useState<ChatIdentity[]>([]);
@@ -53,10 +55,11 @@ export function NotificationSettings({
         api.fetchChatDestinations(token),
       ]);
       setPrefs(prefsData);
+      onPreferencesChange(prefsData);
       setIdentities(identityData);
       onDestinationsChange(destinationData);
     });
-  }, [isAuthenticated, onDestinationsChange, run]);
+  }, [isAuthenticated, onDestinationsChange, onPreferencesChange, run]);
 
   useEffect(() => {
     reload().catch(() => null);
@@ -108,7 +111,10 @@ export function NotificationSettings({
     setPrefs({ ...prefs, ...updates });
     setIsSaving(true);
     const saved = await run((token) => api.updatePreferences(token, updates));
-    if (saved) setPrefs(saved);
+    if (saved) {
+      setPrefs(saved);
+      onPreferencesChange(saved);
+    }
     setIsSaving(false);
   };
 

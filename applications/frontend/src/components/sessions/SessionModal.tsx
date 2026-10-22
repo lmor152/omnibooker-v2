@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Clock, Calendar as CalendarIcon, AlertTriangle } from "lucide-react";
-import type { BookingSlot, BookingSlotInput, ChatDestination, Provider } from "../../types";
+import type { BookingSlot, BookingSlotInput, ChatDestination, Provider, UserPreferences } from "../../types";
 import { ChipsList } from "../ChipsList";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { Switch } from "../ui/switch";
@@ -9,6 +9,7 @@ interface SessionModalProps {
   slot: BookingSlot | null;
   providers: Provider[];
   destinations: ChatDestination[];
+  preferences: UserPreferences | null;
   onSave: (slotInput: BookingSlotInput) => Promise<void>;
   onClose: () => void;
   onTest: (payload: {
@@ -48,7 +49,7 @@ const COMMON_TIMEZONES = [
 
 type TestStatus = "idle" | "loading" | "success" | "error";
 
-export function SessionModal({ slot, providers, destinations, onSave, onClose, onTest }: SessionModalProps) {
+export function SessionModal({ slot, providers, destinations, preferences, onSave, onClose, onTest }: SessionModalProps) {
   const [form, setForm] = useState<BookingSlotInput>(defaultSlotValues);
   const [clubCourtSlug, setClubCourtSlug] = useState("");
   const [clubDoubleSession, setClubDoubleSession] = useState(false);
@@ -674,6 +675,7 @@ export function SessionModal({ slot, providers, destinations, onSave, onClose, o
           <NotificationSettingsSection
             value={form}
             destinations={destinations}
+            defaults={preferences}
             onChange={(updates) => setForm((prev) => ({ ...prev, ...updates }))}
             onError={setError}
           />
