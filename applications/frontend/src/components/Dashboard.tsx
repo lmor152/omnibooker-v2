@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Calendar, Home, ListTodo, Settings as SettingsIcon, LogOut, LogIn, RefreshCw, BookOpen } from "lucide-react";
+import { Bell, BookOpen, Calendar, ListTodo, LogIn, LogOut, RefreshCw, Settings as SettingsIcon, X } from "lucide-react";
 import type {
   BookingSlot,
   BookingSlotInput,
@@ -15,7 +15,14 @@ import { UpcomingTasks } from "./tasks/UpcomingTasks";
 import { GuidesTab } from "./guides/GuidesTab";
 import { NotificationSettings } from "./settings/NotificationSettings";
 import * as api from "../lib/api";
-import { Alert, AlertDescription } from "./ui/alert";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 const AUTH_REQUIRED_MESSAGE = "Please log in to manage your bookings.";
 const DEMO_PROVIDERS: Provider[] = [
@@ -143,16 +150,33 @@ const getErrorMessage = (error: unknown) => (error instanceof Error ? error.mess
 
 interface DashboardProps {
   isAuthenticated: boolean;
+  userName?: string;
   getAccessToken: () => Promise<string>;
   onLogin: () => void;
   onLogout: () => void;
-  onNavigateToHome: () => void;
+  /** Set when showing demo data to a logged-out visitor; returns them to the home page. */
+  onExitPreview?: () => void;
 }
 
 type DashboardTab = "tasks" | "sessions" | "providers" | "notifications" | "guides";
 
-export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, onNavigateToHome }: DashboardProps) {
-  const [activeTab, setActiveTab] = useState<DashboardTab>("tasks");
+const DASHBOARD_TABS: DashboardTab[] = ["tasks", "sessions", "providers", "notifications", "guides"];
+
+// The active tab lives in the URL hash so reloads and home-screen relaunches keep your place.
+const tabFromHash = (): DashboardTab => {
+  const hash = window.location.hash.slice(1);
+  return DASHBOARD_TABS.includes(hash as DashboardTab) ? (hash as DashboardTab) : "tasks";
+};
+
+export function Dashboard({
+  isAuthenticated,
+  userName,
+  getAccessToken,
+  onLogin,
+  onLogout,
+  onExitPreview,
+}: DashboardProps) {
+  const [activeTab, setActiveTabState] = useState<DashboardTab>(tabFromHash);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [bookingSlots, setBookingSlots] = useState<BookingSlot[]>([]);
   const [bookingTasks, setBookingTasks] = useState<BookingTask[]>([]);
@@ -216,6 +240,20 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
     }
     fetchAll().catch(() => null);
   }, [fetchAll, isAuthenticated]);
+
+  useEffect(() => {
+    const handleHashChange = () => setActiveTabState(tabFromHash());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  const setActiveTab = (tab: DashboardTab) => {
+    setActiveTabState(tab);
+    if (window.location.hash !== `#${tab}`) {
+      window.location.hash = tab;
+    }
+    window.scrollTo({ top: 0 });
+  };
 
   const ensureAuthenticated = useCallback(() => {
     if (!isAuthenticated) {
@@ -489,104 +527,147 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
     );
   }
 
+  const refresh = () => fetchAll({ background: true }).catch(() => null);
+  const userInitial = userName?.charAt(0)?.toUpperCase();
+
+  const brand = (
+    <>
+      <div className="w-9 h-9 rounded-xl overflow-hidden border border-green-100 shadow-sm transform -rotate-3 bg-white flex items-center justify-center">
+        <img src="/favicon.png" alt="" className="w-6 h-6 object-contain" />
+      </div>
+      <h1 className="text-green-700 text-lg sm:text-xl font-bold">Bookie Monster</h1>
+    </>
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-[#FAFAF8]">
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
+      {/* Header + mobile tabs share one sticky container so the tabs always sit flush under the header */}
+      <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-sm border-b border-gray-200 pt-safe px-safe">
+        <header className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-3">
+          {onExitPreview ? (
             <button
               type="button"
-              onClick={onNavigateToHome}
-              className="flex items-center gap-3 -m-1 p-1 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors hover:text-green-700"
-              aria-label="Return to home"
+              onClick={onExitPreview}
+              className="flex items-center gap-2.5 -m-1 p-1 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+              aria-label="Back to home"
             >
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl overflow-hidden border border-green-100 shadow-sm transform -rotate-3 bg-white flex items-center justify-center">
-                <img src="/favicon.png" alt="Bookie Monster" className="w-7 h-7 sm:w-9 sm:h-9 object-contain" />
-              </div>
-              <div className="text-left">
-                <h1 className="text-green-700 text-xl sm:text-2xl font-bold">Bookie Monster</h1>
-              </div>
+              {brand}
             </button>
-            <div className="flex items-center gap-2">
+          ) : (
+            <div className="flex items-center gap-2.5">{brand}</div>
+          )}
+
+          {isAuthenticated ? (
+            <div className="flex items-center gap-1">
               <button
-                onClick={() => fetchAll({ background: true }).catch(() => null)}
-                disabled={isRefreshing || !isAuthenticated}
-                className="p-2 text-gray-700 hover:text-green-600 transition-colors disabled:opacity-50"
-                title={isAuthenticated ? "Refresh" : "Log in to refresh"}
+                onClick={refresh}
+                disabled={isRefreshing}
+                className="hidden sm:flex h-10 w-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 hover:text-green-700 transition-colors disabled:opacity-50"
+                aria-label="Refresh"
+                title="Refresh"
               >
                 <RefreshCw className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} />
               </button>
-              <button
-                onClick={onNavigateToHome}
-                className="hidden sm:flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-green-600 transition-colors"
-              >
-                <Home className="w-5 h-5" />
-                <span>Home</span>
-              </button>
-              <button
-                onClick={isAuthenticated ? onLogout : onLogin}
-                className={`flex items-center gap-2 px-4 py-2 text-gray-700 transition-colors ${
-                  isAuthenticated ? "hover:text-red-600" : "hover:text-green-600"
-                }`}
-              >
-                {isAuthenticated ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
-                <span className="hidden sm:inline">{isAuthenticated ? "Logout" : "Log in"}</span>
-              </button>
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger
+                  className="flex h-10 w-10 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                  aria-label="Account menu"
+                >
+                  <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-sm font-semibold text-green-700">
+                    {userInitial ?? "?"}
+                    {isRefreshing && (
+                      <span className="absolute inset-0 rounded-full border-2 border-green-600 border-t-transparent animate-spin" />
+                    )}
+                  </span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[12rem] rounded-xl border-gray-200 bg-white p-1 shadow-lg">
+                  {userName && (
+                    <>
+                      <DropdownMenuLabel className="px-3 py-2">
+                        <span className="block text-[11px] font-normal uppercase tracking-wide text-gray-400">Signed in as</span>
+                        <span className="block truncate text-sm font-medium text-gray-800">{userName}</span>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator className="bg-gray-100" />
+                    </>
+                  )}
+                  <DropdownMenuItem onSelect={refresh} disabled={isRefreshing} className="min-h-10 gap-3 px-3 text-gray-700">
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={onLogout} className="min-h-10 gap-3 px-3 text-red-600 focus:bg-red-50 focus:text-red-700">
+                    <LogOut className="h-4 w-4" />
+                    Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-          </div>
-        </div>
-      </header>
+          ) : (
+            <button
+              onClick={onLogin}
+              className="flex items-center gap-2 h-10 px-4 rounded-full bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+              Log in
+            </button>
+          )}
+        </header>
 
-      {/* Mobile Tab Navigation */}
-      <div className="lg:hidden border-b border-gray-200 bg-white sticky top-[73px] sm:top-[81px] z-40">
-        <div className="flex">
-          <TabButton
-            active={activeTab === "tasks"}
-            onClick={() => setActiveTab("tasks")}
-            icon={<ListTodo className="w-5 h-5" />}
-            label="Tasks"
-          />
-          <TabButton
-            active={activeTab === "sessions"}
-            onClick={() => setActiveTab("sessions")}
-            icon={<Calendar className="w-5 h-5" />}
-            label="Sessions"
-          />
-          <TabButton
-            active={activeTab === "providers"}
-            onClick={() => setActiveTab("providers")}
-            icon={<SettingsIcon className="w-5 h-5" />}
-            label="Providers"
-          />
-          <TabButton
-            active={activeTab === "notifications"}
-            onClick={() => setActiveTab("notifications")}
-            icon={<Bell className="w-5 h-5" />}
-            label="Alerts"
-          />
-          <TabButton
-            active={activeTab === "guides"}
-            onClick={() => setActiveTab("guides")}
-            icon={<BookOpen className="w-5 h-5" />}
-            label="Guides"
-          />
+        {/* Mobile Tab Navigation */}
+        <div className="lg:hidden border-t border-gray-200 bg-white">
+          <div className="flex">
+            <TabButton
+              active={activeTab === "tasks"}
+              onClick={() => setActiveTab("tasks")}
+              icon={<ListTodo className="w-5 h-5" />}
+              label="Tasks"
+            />
+            <TabButton
+              active={activeTab === "sessions"}
+              onClick={() => setActiveTab("sessions")}
+              icon={<Calendar className="w-5 h-5" />}
+              label="Sessions"
+            />
+            <TabButton
+              active={activeTab === "providers"}
+              onClick={() => setActiveTab("providers")}
+              icon={<SettingsIcon className="w-5 h-5" />}
+              label="Providers"
+            />
+            <TabButton
+              active={activeTab === "notifications"}
+              onClick={() => setActiveTab("notifications")}
+              icon={<Bell className="w-5 h-5" />}
+              label="Alerts"
+            />
+            <TabButton
+              active={activeTab === "guides"}
+              onClick={() => setActiveTab("guides")}
+              icon={<BookOpen className="w-5 h-5" />}
+              label="Guides"
+            />
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] px-safe">
         {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <div role="alert" className="mb-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <p className="flex-1 min-w-0 break-words">{error}</p>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="-m-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-red-100"
+              aria-label="Dismiss error"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         )}
         {!isAuthenticated && (
-          <Alert className="mb-6">
-            <AlertDescription>
-              This is a preview of your dashboard. Log in to load real providers, sessions, and tasks.
-            </AlertDescription>
-          </Alert>
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Preview with demo data. Log in to manage your own bookings.
+          </div>
         )}
 
         <div className="lg:grid lg:grid-cols-12 lg:gap-8">
@@ -627,7 +708,7 @@ export function Dashboard({ isAuthenticated, getAccessToken, onLogin, onLogout, 
           </aside>
 
           {/* Main Content Area */}
-          <main className="lg:col-span-9">
+          <main className="lg:col-span-9 min-w-0">
             {activeTab === "tasks" && (
               <UpcomingTasks
                 bookingTasks={bookingTasks}

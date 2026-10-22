@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Link2, MessageSquare, RefreshCw, Send, Trash2, Unlink } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Bell, Link2, MessageSquare, RefreshCw, Send, Star, Trash2, Unlink, X } from "lucide-react";
 import type { ChatDestination, ChatIdentity, ChatLinkCode, UserPreferences } from "../../types";
 import * as api from "../../lib/api";
 import { ChipsList } from "../ChipsList";
-import { Alert, AlertDescription } from "../ui/alert";
+import { ActionMenu } from "../common/ActionMenu";
+import { ConfirmDialog } from "../common/ConfirmDialog";
+import { Field, ToggleRow } from "../common/Field";
+import { PageHeader } from "../common/PageHeader";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { NativeSelect } from "../ui/native-select";
 import { Switch } from "../ui/switch";
 
 interface NotificationSettingsProps {
@@ -30,6 +37,7 @@ export function NotificationSettings({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [removingChannel, setRemovingChannel] = useState<ChatDestination | null>(null);
 
   const run = useCallback(
     async <T,>(action: (token: string) => Promise<T>): Promise<T | undefined> => {
@@ -74,9 +82,12 @@ export function NotificationSettings({
 
   if (!isAuthenticated) {
     return (
-      <Alert>
-        <AlertDescription>Log in to set up Discord notifications and booking confirmations.</AlertDescription>
-      </Alert>
+      <div>
+        <PageHeader title="Notifications" />
+        <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
+          Log in to set up Discord notifications and booking confirmations.
+        </p>
+      </div>
     );
   }
 
@@ -119,232 +130,282 @@ export function NotificationSettings({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Notifications</h2>
-          <p className="text-gray-600">
-            Get booking updates in Discord and confirm bookings there, or let unconfirmed ones be cancelled for a
-            refund.
-          </p>
-        </div>
-        <button
-          onClick={() => reload()}
-          className="flex items-center gap-2 px-3 py-2 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 self-start"
+    <div>
+      <PageHeader
+        title="Notifications"
+        description="Get booking updates in Discord and confirm bookings there, or let unconfirmed ones be cancelled for a refund."
+        actions={
+          <Button variant="outline" size="icon" onClick={() => reload()} aria-label="Refresh notification settings">
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        }
+      />
+
+      <div className="space-y-4">
+        {error && (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 break-words">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+            <p className="min-w-0 flex-1">{notice}</p>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              className="-m-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-green-100"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Discord account */}
+        <SettingsCard icon={Link2} title="Discord account">
+          {identities.length > 0 ? (
+            <ul className="space-y-1">
+              {identities.map((identity) => (
+                <li key={identity.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate">
+                    Linked as <strong>{identity.externalUsername ?? "Discord user"}</strong>
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => handleUnlink(identity)} className="text-gray-600 hover:text-red-600">
+                    <Unlink className="w-4 h-4" />
+                    Unlink
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-600">Not linked yet. Linking lets you keep or cancel bookings from Discord.</p>
+          )}
+
+          {linkCode && secondsLeft > 0 ? (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3 space-y-1.5">
+              <p className="text-sm text-gray-700">In Discord, run:</p>
+              <p className="font-mono text-lg font-semibold tracking-wider text-gray-900 break-all select-all">
+                /bookie link {linkCode.code}
+              </p>
+              <p className="text-xs text-gray-600">
+                Expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}. Then refresh this
+                page.
+              </p>
+            </div>
+          ) : (
+            <Button onClick={handleGenerateCode} className="w-full sm:w-auto">
+              {identities.length > 0 ? "Link another account" : "Generate link code"}
+            </Button>
+          )}
+
+          {linkCode?.botInviteUrl && (
+            <p className="text-sm text-gray-600">
+              Bot not in your server yet?{" "}
+              <a href={linkCode.botInviteUrl} target="_blank" rel="noreferrer" className="text-green-700 underline">
+                Add Bookie Monster to a server
+              </a>
+              . See the Discord guide for step-by-step instructions.
+            </p>
+          )}
+        </SettingsCard>
+
+        {/* Channels */}
+        <SettingsCard
+          icon={MessageSquare}
+          title="Channels"
+          description={
+            <>
+              Run <code className="font-mono">/bookie channel</code> in a Discord channel to add it here. Sessions post to
+              your default channel unless you choose another one in the session.
+            </>
+          }
         >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
+          {destinations.length === 0 ? (
+            <p className="text-sm text-gray-500 italic">No channels yet.</p>
+          ) : (
+            <ul className="-my-1 divide-y divide-gray-100">
+              {destinations.map((destination) => {
+                const isDefault = prefs?.defaultDestinationId === destination.id;
+                return (
+                  <li key={destination.id} className="flex items-center justify-between gap-3 py-1.5">
+                    <div className="flex min-w-0 items-center gap-2 text-sm">
+                      <span className="truncate font-medium text-gray-800">{destination.name}</span>
+                      {isDefault && (
+                        <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <ActionMenu
+                      label={`Actions for ${destination.name}`}
+                      items={[
+                        {
+                          label: "Make default",
+                          icon: Star,
+                          onSelect: () => savePrefs({ defaultDestinationId: destination.id }),
+                          disabled: isDefault,
+                        },
+                        { label: "Send test message", icon: Send, onSelect: () => handleTestChannel(destination) },
+                        {
+                          label: "Remove",
+                          icon: Trash2,
+                          onSelect: () => setRemovingChannel(destination),
+                          destructive: true,
+                        },
+                      ]}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </SettingsCard>
+
+        {/* Defaults */}
+        {prefs && (
+          <SettingsCard
+            icon={Bell}
+            title="Defaults for all sessions"
+            description="Each session can override these in its settings."
+            status={isSaving ? "Saving…" : undefined}
+          >
+            <ToggleRow
+              label="Post booking updates"
+              description="Send a message when a booking is made, kept or cancelled."
+              htmlFor="pref-notifications"
+            >
+              <Switch
+                id="pref-notifications"
+                checked={prefs.notificationsEnabled}
+                onCheckedChange={(value) => savePrefs({ notificationsEnabled: value })}
+              />
+            </ToggleRow>
+            <ToggleRow
+              label="Ask me to confirm bookings"
+              description="Unconfirmed bookings are cancelled at the deadline, while they can still be refunded."
+              htmlFor="pref-auto-cancel"
+            >
+              <Switch
+                id="pref-auto-cancel"
+                checked={prefs.autoCancelDefault}
+                onCheckedChange={(value) => savePrefs({ autoCancelDefault: value })}
+              />
+            </ToggleRow>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Confirmation deadline" htmlFor="pref-deadline-mode">
+                <NativeSelect
+                  id="pref-deadline-mode"
+                  value={deadlineMode}
+                  onChange={(event) =>
+                    savePrefs({ confirmDeadlineHours: event.target.value === "auto" ? null : 24 })
+                  }
+                >
+                  <option value="auto">Before the refund deadline</option>
+                  <option value="fixed">Before the session</option>
+                </NativeSelect>
+              </Field>
+              {deadlineMode === "auto" ? (
+                <Field
+                  label="Hours before the refund deadline"
+                  htmlFor="pref-refund-buffer"
+                  hint="Uses each provider's refund deadline."
+                >
+                  <NumberInput
+                    id="pref-refund-buffer"
+                    value={prefs.refundBufferHours}
+                    min={0}
+                    max={48}
+                    onCommit={(value) => savePrefs({ refundBufferHours: value })}
+                  />
+                </Field>
+              ) : (
+                <Field
+                  label="Hours before the session"
+                  htmlFor="pref-deadline-hours"
+                  hint="Never later than the refund deadline."
+                >
+                  <NumberInput
+                    id="pref-deadline-hours"
+                    value={prefs.confirmDeadlineHours ?? 24}
+                    min={0}
+                    max={336}
+                    onCommit={(value) => savePrefs({ confirmDeadlineHours: value })}
+                  />
+                </Field>
+              )}
+            </div>
+
+            <Field label="Reminders" htmlFor="pref-reminders" hint="Hours before the confirmation deadline.">
+              <ChipsList
+                id="pref-reminders"
+                items={prefs.reminderHours.map(String)}
+                onChange={(items) => savePrefs({ reminderHours: items.map(Number) })}
+                placeholder="e.g. 12"
+                inputMode="numeric"
+                onAddAttempt={parseHours}
+                onError={setError}
+              />
+            </Field>
+
+            <Field
+              label="Short-notice bookings"
+              htmlFor="pref-short-notice"
+              hint="Bookings made less than this many hours before their deadline are kept without asking."
+            >
+              <NumberInput
+                id="pref-short-notice"
+                value={prefs.shortNoticeMinHours}
+                min={0}
+                max={48}
+                onCommit={(value) => savePrefs({ shortNoticeMinHours: value })}
+              />
+            </Field>
+          </SettingsCard>
+        )}
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {notice && (
-        <Alert>
-          <AlertDescription>{notice}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Discord account */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Link2 className="w-5 h-5 text-green-700" />
-          <h3 className="text-lg font-semibold text-gray-800">Discord account</h3>
-        </div>
-
-        {identities.length > 0 ? (
-          <ul className="space-y-2">
-            {identities.map((identity) => (
-              <li key={identity.id} className="flex items-center justify-between gap-3 text-sm">
-                <span>
-                  Linked as <strong>{identity.externalUsername ?? "Discord user"}</strong>
-                </span>
-                <button
-                  onClick={() => handleUnlink(identity)}
-                  className="flex items-center gap-1 text-gray-600 hover:text-red-600"
-                >
-                  <Unlink className="w-4 h-4" />
-                  Unlink
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-600">Not linked yet. Linking lets you keep or cancel bookings from Discord.</p>
-        )}
-
-        {linkCode && secondsLeft > 0 ? (
-          <div className="rounded-lg bg-green-50 border border-green-200 p-4 space-y-2">
-            <p className="text-sm text-gray-700">In Discord, run:</p>
-            <p className="font-mono text-xl font-semibold tracking-wider text-gray-900">/bookie link {linkCode.code}</p>
-            <p className="text-xs text-gray-600">
-              Expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}. Then refresh this
-              page.
-            </p>
-          </div>
-        ) : (
-          <button
-            onClick={handleGenerateCode}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
-          >
-            {identities.length > 0 ? "Link another account" : "Generate link code"}
-          </button>
-        )}
-
-        {linkCode?.botInviteUrl && (
-          <p className="text-sm text-gray-600">
-            Bot not in your server yet?{" "}
-            <a href={linkCode.botInviteUrl} target="_blank" rel="noreferrer" className="text-green-700 underline">
-              Add Bookie Monster to a server
-            </a>
-            . See the Discord guide for step-by-step instructions.
-          </p>
-        )}
-      </section>
-
-      {/* Channels */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-green-700" />
-          <h3 className="text-lg font-semibold text-gray-800">Channels</h3>
-        </div>
-        <p className="text-sm text-gray-600">
-          Run <code className="font-mono">/bookie channel</code> in a Discord channel to add it here. Sessions post to
-          your default channel unless you choose another one in the session.
-        </p>
-        {destinations.length === 0 ? (
-          <p className="text-sm text-gray-500 italic">No channels yet.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {destinations.map((destination) => {
-              const isDefault = prefs?.defaultDestinationId === destination.id;
-              return (
-                <li key={destination.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="default-channel"
-                      checked={isDefault}
-                      onChange={() => savePrefs({ defaultDestinationId: destination.id })}
-                    />
-                    <span className="font-medium text-gray-800">{destination.name}</span>
-                    {isDefault && <span className="text-xs text-green-700">default</span>}
-                  </label>
-                  <div className="flex items-center gap-3 text-sm">
-                    <button
-                      onClick={() => handleTestChannel(destination)}
-                      className="flex items-center gap-1 text-gray-600 hover:text-green-700"
-                    >
-                      <Send className="w-4 h-4" />
-                      Test
-                    </button>
-                    <button
-                      onClick={() => handleRemoveChannel(destination)}
-                      className="flex items-center gap-1 text-gray-600 hover:text-red-600"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      {/* Defaults */}
-      {prefs && (
-        <section className="bg-white border border-gray-200 rounded-xl p-5 space-y-5">
-          <div className="flex items-center gap-2">
-            <Bell className="w-5 h-5 text-green-700" />
-            <h3 className="text-lg font-semibold text-gray-800">Defaults for all sessions</h3>
-            {isSaving && <span className="text-xs text-gray-500">Saving…</span>}
-          </div>
-          <p className="text-sm text-gray-600">Each session can override these in its settings.</p>
-
-          <ToggleRow
-            label="Post booking updates"
-            description="Send a message when a booking is made, kept or cancelled."
-            checked={prefs.notificationsEnabled}
-            onChange={(value) => savePrefs({ notificationsEnabled: value })}
-          />
-          <ToggleRow
-            label="Ask me to confirm bookings"
-            description="Unconfirmed bookings are cancelled at the deadline, while they can still be refunded."
-            checked={prefs.autoCancelDefault}
-            onChange={(value) => savePrefs({ autoCancelDefault: value })}
-          />
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-800">Confirmation deadline</p>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="deadline-mode"
-                className="mt-1"
-                checked={deadlineMode === "auto"}
-                onChange={() => savePrefs({ confirmDeadlineHours: null })}
-              />
-              <span>
-                Automatic: the provider's refund deadline, minus{" "}
-                <NumberInput
-                  value={prefs.refundBufferHours}
-                  min={0}
-                  max={48}
-                  onCommit={(value) => savePrefs({ refundBufferHours: value })}
-                />{" "}
-                hours
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="deadline-mode"
-                className="mt-1"
-                checked={deadlineMode === "fixed"}
-                onChange={() => savePrefs({ confirmDeadlineHours: 24 })}
-              />
-              <span>
-                <NumberInput
-                  value={prefs.confirmDeadlineHours ?? 24}
-                  min={0}
-                  max={336}
-                  disabled={deadlineMode !== "fixed"}
-                  onCommit={(value) => savePrefs({ confirmDeadlineHours: value })}
-                />{" "}
-                hours before the session (never later than the refund deadline)
-              </span>
-            </label>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-800">Reminders (hours before the deadline)</p>
-            <ChipsList
-              items={prefs.reminderHours.map(String)}
-              onChange={(items) => savePrefs({ reminderHours: items.map(Number) })}
-              placeholder="e.g. 12"
-              onAddAttempt={parseHours}
-              onError={setError}
-            />
-          </div>
-
-          <label className="flex flex-wrap items-center gap-2 text-sm">
-            Keep bookings without asking if they're made less than
-            <NumberInput
-              value={prefs.shortNoticeMinHours}
-              min={0}
-              max={48}
-              onCommit={(value) => savePrefs({ shortNoticeMinHours: value })}
-            />
-            hours before their deadline
-          </label>
-        </section>
-      )}
+      <ConfirmDialog
+        open={removingChannel !== null}
+        onOpenChange={(open) => !open && setRemovingChannel(null)}
+        title="Remove this channel?"
+        description={
+          removingChannel
+            ? `Bookie Monster will stop posting to ${removingChannel.name}. You can add it again with /bookie channel.`
+            : undefined
+        }
+        confirmLabel="Remove"
+        onConfirm={() => removingChannel && handleRemoveChannel(removingChannel)}
+      />
     </div>
+  );
+}
+
+function SettingsCard({
+  icon: Icon,
+  title,
+  description,
+  status,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: React.ReactNode;
+  status?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 space-y-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <Icon className="w-5 h-5 text-green-700" />
+          <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+          {status && <span className="text-xs text-gray-500">{status}</span>}
+        </div>
+        {description && <p className="mt-1 text-sm text-gray-600">{description}</p>}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -356,36 +417,16 @@ function parseHours(value: string): { value: string } | { error: string } {
   return { value: String(hours) };
 }
 
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <p className="text-sm font-medium text-gray-800">{label}</p>
-        <p className="text-sm text-gray-600">{description}</p>
-      </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
-    </div>
-  );
-}
-
 /** Small number field that saves on blur/Enter rather than on every keystroke. */
 function NumberInput({
+  id,
   value,
   min,
   max,
   disabled,
   onCommit,
 }: {
+  id?: string;
   value: number;
   min: number;
   max: number;
@@ -405,8 +446,10 @@ function NumberInput({
   };
 
   return (
-    <input
+    <Input
+      id={id}
       type="number"
+      inputMode="numeric"
       min={min}
       max={max}
       value={draft}
@@ -414,7 +457,7 @@ function NumberInput({
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => event.key === "Enter" && commit()}
-      className="w-16 px-2 py-1 border border-gray-300 rounded-md text-sm disabled:bg-gray-100"
+      className="w-24"
     />
   );
 }

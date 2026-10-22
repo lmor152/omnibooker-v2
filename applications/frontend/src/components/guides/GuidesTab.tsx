@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, BookOpenCheck, FileText, Info, Lightbulb, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, FileText, Info, Lightbulb, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkDirective from "remark-directive";
 import remarkGfm from "remark-gfm";
@@ -7,9 +7,9 @@ import { visit } from "unist-util-visit";
 import type { Root } from "mdast";
 
 import { guides, type Guide } from "../../guides";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { PageHeader } from "../common/PageHeader";
 import { Input } from "../ui/input";
-import { ScrollArea } from "../ui/scroll-area";
+import { NativeSelect } from "../ui/native-select";
 import { cn } from "../ui/utils";
 
 // Remark plugin to transform directives into custom components
@@ -91,14 +91,14 @@ function Admonition({
   return (
     <div
       className={cn(
-        "my-4 rounded-lg border-l-4 p-4 flex gap-3",
+        "my-4 rounded-lg border-l-4 p-3 sm:p-4 flex gap-3",
         config.bgColor,
         config.borderColor,
         config.textColor,
       )}
     >
       <Icon className={cn("w-5 h-5 flex-shrink-0 mt-0.5", config.iconColor)} />
-      <div className="flex-1 prose-sm [&>p]:my-1 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0">
+      <div className="flex-1 min-w-0 prose-sm [&>p]:my-1 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0">
         {children}
       </div>
     </div>
@@ -137,86 +137,82 @@ export function GuidesTab() {
   }, [filteredGuides, activeSlug]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-widest text-green-600 font-semibold">Guides</p>
-        <h2 className="text-3xl font-semibold text-gray-900 flex items-center gap-2">
-          <BookOpenCheck className="w-7 h-7 text-green-600" />
-          How to use Bookie Monster
-        </h2>
-        <p className="text-gray-600">
-          Short walkthroughs that explain how to connect providers, design sessions, etc.
-        </p>
+    <div>
+      <PageHeader
+        title="Guides"
+        description="Short walkthroughs that explain how to connect providers, design sessions, etc."
+      />
+
+      {/* Mobile: pick a guide from a dropdown */}
+      <div className="mb-4 lg:hidden">
+        <label htmlFor="guide-picker" className="sr-only">
+          Choose a guide
+        </label>
+        <NativeSelect id="guide-picker" value={activeGuide?.slug ?? ""} onChange={(e) => setActiveSlug(e.target.value)}>
+          {guides.map((guide) => (
+            <option key={guide.slug} value={guide.slug}>
+              {guide.title}
+            </option>
+          ))}
+        </NativeSelect>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Browse guides</CardTitle>
-            <CardDescription>Search tips or select a guide</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6">
+        {/* Desktop: searchable list */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-24 space-y-3">
             <Input
               type="search"
-              placeholder="Search"
+              placeholder="Search guides"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="bg-white"
             />
-            <ScrollArea className="max-h-[420px] pr-2">
-              <div className="space-y-1">
-                {filteredGuides.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No guides match that search.</p>
-                )}
-                {filteredGuides.map((guide) => (
-                  <button
-                    key={guide.slug}
-                    type="button"
-                    onClick={() => setActiveSlug(guide.slug)}
-                    className={cn(
-                      "w-full text-left rounded-lg border px-3 py-2 transition-all",
-                      activeGuide?.slug === guide.slug
-                        ? "border-green-500 bg-green-50/80 text-green-900 shadow-sm"
-                        : "border-transparent bg-white text-gray-800 hover:border-green-200 hover:bg-green-50/60",
-                    )}
-                  >
-                    <span className="text-sm font-medium flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-green-500" />
-                      {guide.title}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+            <nav className="space-y-1">
+              {filteredGuides.length === 0 && (
+                <p className="px-3 text-sm text-gray-500">No guides match that search.</p>
+              )}
+              {filteredGuides.map((guide) => (
+                <button
+                  key={guide.slug}
+                  type="button"
+                  onClick={() => setActiveSlug(guide.slug)}
+                  className={cn(
+                    "w-full text-left rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center gap-2",
+                    activeGuide?.slug === guide.slug
+                      ? "bg-green-50 text-green-800"
+                      : "text-gray-700 hover:bg-gray-50",
+                  )}
+                >
+                  <FileText className="w-4 h-4 shrink-0 text-green-600" />
+                  {guide.title}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </aside>
 
-        <Card className="shadow-sm border-green-100 overflow-hidden">
-          <CardContent className="p-0">
-            {activeGuide ? (
-              <ScrollArea className="h-[700px]">
-                <article className="prose prose-sm max-w-none px-6 py-6 prose-headings:text-gray-900 prose-h1:text-2xl prose-h1:font-bold prose-h1:mb-4 prose-h2:text-xl prose-h2:font-semibold prose-h2:mt-8 prose-h2:mb-3 prose-h3:text-lg prose-h3:font-semibold prose-h3:mt-6 prose-h3:mb-2 prose-p:text-gray-700 prose-p:leading-relaxed prose-a:text-green-600 prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-900 prose-strong:font-semibold prose-ul:my-4 prose-ol:my-4 prose-li:text-gray-700 prose-li:my-1 prose-code:text-green-700 prose-code:bg-green-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-l-green-500 prose-blockquote:bg-green-50/50 prose-blockquote:text-gray-700">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkDirective, remarkAdmonitions]}
-                    components={{
-                      div: ({ node, className, children, ...props }: any) => {
-                        if (className?.includes("admonition")) {
-                          const type = (props as any)["data-admonition-type"] as AdmonitionType;
-                          return <Admonition type={type}>{children}</Admonition>;
-                        }
-                        return <div className={className} {...props}>{children}</div>;
-                      },
-                    }}
-                  >
-                    {activeGuide.content}
-                  </ReactMarkdown>
-                </article>
-              </ScrollArea>
-            ) : (
-              <div className="py-10 text-center text-muted-foreground">No guides available yet.</div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="min-w-0 rounded-xl border border-gray-200 bg-white">
+          {activeGuide ? (
+            <article className="prose prose-sm max-w-none break-words px-4 py-5 sm:px-6 sm:py-6 prose-a:break-all prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto prose-headings:text-gray-900 prose-h1:text-2xl prose-h1:font-bold prose-h1:mb-4 prose-h2:text-xl prose-h2:font-semibold prose-h2:mt-8 prose-h2:mb-3 prose-h3:text-lg prose-h3:font-semibold prose-h3:mt-6 prose-h3:mb-2 prose-p:text-gray-700 prose-p:leading-relaxed prose-a:text-green-600 prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-900 prose-strong:font-semibold prose-ul:my-4 prose-ol:my-4 prose-li:text-gray-700 prose-li:my-1 prose-code:text-green-700 prose-code:bg-green-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-l-green-500 prose-blockquote:bg-green-50/50 prose-blockquote:text-gray-700">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkDirective, remarkAdmonitions]}
+                components={{
+                  div: ({ node, className, children, ...props }: any) => {
+                    if (className?.includes("admonition")) {
+                      const type = (props as any)["data-admonition-type"] as AdmonitionType;
+                      return <Admonition type={type}>{children}</Admonition>;
+                    }
+                    return <div className={className} {...props}>{children}</div>;
+                  },
+                }}
+              >
+                {activeGuide.content}
+              </ReactMarkdown>
+            </article>
+          ) : (
+            <div className="py-10 text-center text-gray-500">No guides available yet.</div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,16 +1,7 @@
 import { useState } from "react";
 import type { BookingTask, ConfirmationStatus } from "../../types";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "../ui/alert-dialog";
+import { formatMoment, withZone } from "../../lib/datetime";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 
 const STATUS: Record<ConfirmationStatus, { label: string; className: string }> = {
   not_required: { label: "Booked", className: "bg-green-50 border-green-200 text-green-800" },
@@ -42,6 +33,7 @@ interface BookingConfirmationProps {
 /** Booked details plus keep/cancel controls for a successful booking task. */
 export function BookingConfirmation({ task, timezone, onConfirm, onCancelBooking }: BookingConfirmationProps) {
   const [busy, setBusy] = useState<"keep" | "cancel" | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const status = STATUS[task.confirmationStatus] ?? STATUS.not_required;
   const isUpcoming = Date.parse(withZone(task.scheduledDate)) > Date.now();
 
@@ -57,99 +49,68 @@ export function BookingConfirmation({ task, timezone, onConfirm, onCancelBooking
     }
   };
 
+  const canKeep = task.confirmationStatus === "awaiting" && onConfirm;
+  const canCancel = CANCELLABLE.includes(task.confirmationStatus) && onCancelBooking;
+  const footnote = [
+    `#${String(task.id).padStart(4, "0")}`,
+    task.confirmationStatus === "confirmed" && task.confirmedBy && `Kept ${describeActor(task.confirmedBy)}`,
+    task.confirmationCode && `Ref ${task.confirmationCode}`,
+  ].filter(Boolean);
+
   return (
     <div className={`mt-3 p-3 border rounded-lg text-sm ${status.className}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div>
-            <span className="font-mono text-xs mr-2">#{String(task.id).padStart(4, "0")}</span>
-            <span className="font-medium">{status.label}:</span>{" "}
-            {[task.bookedResource, task.bookedTime && `at ${task.bookedTime}`].filter(Boolean).join(" ")}
-            {task.cost != null && ` · £${task.cost.toFixed(2)}`}
-          </div>
-          {task.confirmationStatus === "awaiting" && task.confirmDeadlineAt && (
-            <div>
-              Confirm by <strong>{formatMoment(task.confirmDeadlineAt, timezone)}</strong> or it will be cancelled.
-            </div>
-          )}
-          {task.confirmationStatus === "confirmed" && task.confirmedBy && (
-            <div className="text-xs opacity-80">Kept {describeActor(task.confirmedBy)}</div>
-          )}
-          {task.cancelMessage && <div>{task.cancelMessage}</div>}
-          {task.refundDeadlineAt && isUpcoming && CANCELLABLE.includes(task.confirmationStatus) && (
-            <div className="text-xs opacity-80">
-              Refundable until {formatMoment(task.refundDeadlineAt, timezone)}
-            </div>
-          )}
-          {task.confirmationCode && <div className="text-xs opacity-80 break-all">Ref: {task.confirmationCode}</div>}
+      <div className="space-y-1 min-w-0">
+        <div className="break-words">
+          <span className="font-medium">{status.label}:</span>{" "}
+          {[task.bookedResource, task.bookedTime && `at ${task.bookedTime}`].filter(Boolean).join(" ")}
+          {task.cost != null && ` · £${task.cost.toFixed(2)}`}
         </div>
-
-        {isUpcoming && (
-          <div className="flex items-center gap-2">
-            {task.confirmationStatus === "awaiting" && onConfirm && (
-              <button
-                onClick={() => act("keep", onConfirm)}
-                disabled={busy !== null}
-                className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60"
-              >
-                {busy === "keep" ? "Keeping…" : "Keep it"}
-              </button>
-            )}
-            {CANCELLABLE.includes(task.confirmationStatus) && onCancelBooking && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    disabled={busy !== null}
-                    className="px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 rounded-lg disabled:opacity-60"
-                  >
-                    {busy === "cancel" ? "Cancelling…" : "Cancel booking"}
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="bg-white border-gray-200 text-gray-800">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-lg font-semibold text-gray-900">
-                      Cancel this booking?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription className="text-sm text-gray-600">
-                      This cancels {task.bookedResource ?? "the booking"} with the provider. It's only cancelled
-                      automatically while it can still be refunded; otherwise you'll be asked to cancel it yourself.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-                      Keep it
-                    </AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => act("cancel", onCancelBooking)}
-                      className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
-                    >
-                      Cancel booking
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
+        {task.confirmationStatus === "awaiting" && task.confirmDeadlineAt && (
+          <div>
+            Confirm by <strong>{formatMoment(task.confirmDeadlineAt, timezone)}</strong> or it will be cancelled.
           </div>
         )}
+        {task.cancelMessage && <div>{task.cancelMessage}</div>}
+        {task.refundDeadlineAt && isUpcoming && CANCELLABLE.includes(task.confirmationStatus) && (
+          <div className="text-xs opacity-80">Refundable until {formatMoment(task.refundDeadlineAt, timezone)}</div>
+        )}
+        {footnote.length > 0 && <div className="text-xs opacity-70 break-all">{footnote.join(" · ")}</div>}
       </div>
+
+      {isUpcoming && (canKeep || canCancel) && (
+        <div className="mt-3 flex gap-2">
+          {canKeep && (
+            <button
+              onClick={() => act("keep", onConfirm)}
+              disabled={busy !== null}
+              className="flex-1 sm:flex-none h-10 px-4 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60"
+            >
+              {busy === "keep" ? "Keeping…" : "Keep it"}
+            </button>
+          )}
+          {canCancel && (
+            <button
+              onClick={() => setConfirmingCancel(true)}
+              disabled={busy !== null}
+              className="flex-1 sm:flex-none h-10 px-4 text-sm font-medium text-red-700 bg-white/70 border border-red-200 hover:bg-red-50 rounded-lg disabled:opacity-60"
+            >
+              {busy === "cancel" ? "Cancelling…" : "Cancel booking"}
+            </button>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmingCancel}
+        onOpenChange={setConfirmingCancel}
+        title="Cancel this booking?"
+        description={`This cancels ${task.bookedResource ?? "the booking"} with the provider. It's only cancelled automatically while it can still be refunded; otherwise you'll be asked to cancel it yourself.`}
+        cancelLabel="Keep it"
+        confirmLabel="Cancel booking"
+        onConfirm={() => act("cancel", onCancelBooking)}
+      />
     </div>
   );
-}
-
-function withZone(value: string): string {
-  // The API may return naive UTC strings; treat them as UTC.
-  return /[Z+]|-\d\d:\d\d$/.test(value) ? value : `${value}Z`;
-}
-
-function formatMoment(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: timezone,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(withZone(value)));
 }
 
 function describeActor(actor: string): string {
