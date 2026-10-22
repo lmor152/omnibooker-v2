@@ -1,5 +1,10 @@
 import type { BookingSlotInput, ChatDestination, ConfirmationPolicy, UserPreferences } from "../../types";
 import { ChipsList } from "../ChipsList";
+import { Field, ToggleRow } from "../common/Field";
+import { FormSection } from "../common/FormSection";
+import { Input } from "../ui/input";
+import { NativeSelect } from "../ui/native-select";
+import { Switch } from "../ui/switch";
 
 type NotificationFields = Pick<
   BookingSlotInput,
@@ -20,9 +25,6 @@ interface NotificationSettingsSectionProps {
   onError: (message: string | null) => void;
 }
 
-const selectClass =
-  "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed";
-
 /** Session-level overrides for notifications and booking confirmation. Empty means "use my default". */
 export function NotificationSettingsSection({
   value,
@@ -37,151 +39,146 @@ export function NotificationSettingsSection({
   const autoCancelOff = !(value.autoCancelEnabled ?? defaultAutoCancel);
 
   return (
-    <details className="border border-gray-200 rounded-lg" open={hasOverrides(value)}>
-      <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-gray-800">
-        Notifications &amp; confirmation
-        <span className="ml-2 font-normal text-gray-500">{summarize(value, destinations)}</span>
-      </summary>
-      <div className="px-4 pb-4 space-y-4">
-        <p className="text-xs text-gray-500">
-          Defaults are set on the Notifications page. Anything left as "Default" follows them.
-        </p>
+    <FormSection
+      title="Notifications & confirmation"
+      description={`Defaults are set on the Notifications page. Anything left as "Default" follows them.`}
+      summary={summarize(value, destinations)}
+      collapsible
+      defaultOpen={hasOverrides(value)}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <TriState
+          id="session-notifications"
+          label="Post booking updates"
+          value={value.notificationsEnabled}
+          defaultValue={defaultNotifications}
+          onChange={(notificationsEnabled) => onChange({ notificationsEnabled })}
+        />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Discord channel" disabled={notificationsOff}>
-            <select
-              className={selectClass}
-              value={value.notifyDestinationId ?? ""}
-              disabled={notificationsOff}
-              onChange={(event) =>
-                onChange({ notifyDestinationId: event.target.value ? Number(event.target.value) : null })
-              }
-            >
-              <option value="">Default channel</option>
-              {destinations.map((destination) => (
-                <option key={destination.id} value={destination.id}>
-                  {destination.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <TriState
-            label="Post booking updates"
-            value={value.notificationsEnabled}
-            defaultValue={defaultNotifications}
-            onChange={(notificationsEnabled) => onChange({ notificationsEnabled })}
-          />
-
-          <TriState
-            label="Ask me to confirm (auto-cancel if not)"
-            value={value.autoCancelEnabled}
-            defaultValue={defaultAutoCancel}
-            onChange={(autoCancelEnabled) => onChange({ autoCancelEnabled })}
-          />
-
-          <Field label="Who can confirm" disabled={autoCancelOff}>
-            <select
-              className={selectClass}
-              value={value.confirmationPolicy ?? "owner_only"}
-              disabled={autoCancelOff}
-              onChange={(event) => onChange({ confirmationPolicy: event.target.value as ConfirmationPolicy })}
-            >
-              <option value="owner_only">Only me</option>
-              <option value="anyone">Anyone in the channel</option>
-            </select>
-          </Field>
-
-          <Field label="Confirm by (hours before)" disabled={autoCancelOff}>
-            <input
-              type="number"
-              min={0}
-              max={336}
-              placeholder="Default"
-              disabled={autoCancelOff}
-              className={selectClass}
-              value={value.confirmDeadlineHours ?? ""}
-              onChange={(event) =>
-                onChange({
-                  confirmDeadlineHours: event.target.value === "" ? null : Number(event.target.value),
-                })
-              }
-            />
-            <p className="mt-1 text-xs text-gray-500">Never later than the provider's refund deadline.</p>
-          </Field>
-        </div>
-
-        {autoCancelOff && (
-          <p className="text-xs text-gray-500">
-            Turn on "Ask me to confirm" to choose who can confirm, the deadline and reminders.
-          </p>
-        )}
-
-        <div>
-          <label
-            className={`flex items-center gap-2 text-sm font-medium mb-2 ${
-              autoCancelOff ? "text-gray-400 cursor-not-allowed" : "text-gray-700"
-            }`}
+        <Field label="Discord channel" htmlFor="session-channel" disabled={notificationsOff}>
+          <NativeSelect
+            id="session-channel"
+            value={value.notifyDestinationId ?? ""}
+            disabled={notificationsOff}
+            onChange={(event) =>
+              onChange({ notifyDestinationId: event.target.value ? Number(event.target.value) : null })
+            }
           >
-            <input
-              type="checkbox"
-              checked={value.reminderHours != null}
-              disabled={autoCancelOff}
-              onChange={(event) => onChange({ reminderHours: event.target.checked ? [12, 2] : null })}
-            />
-            Custom reminders (hours before the deadline)
-          </label>
-          {value.reminderHours != null && !autoCancelOff && (
-            <ChipsList
-              items={value.reminderHours.map(String)}
-              onChange={(items) => onChange({ reminderHours: items.map(Number) })}
-              placeholder="e.g. 6"
-              onAddAttempt={(raw) => {
-                const hours = Number(raw);
-                return Number.isInteger(hours) && hours >= 0 && hours <= 336
-                  ? { value: String(hours) }
-                  : { error: "Reminders must be whole hours between 0 and 336" };
-              }}
-              onError={onError}
-            />
-          )}
-        </div>
-      </div>
-    </details>
-  );
-}
+            <option value="">Default channel</option>
+            {destinations.map((destination) => (
+              <option key={destination.id} value={destination.id}>
+                {destination.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
 
-function Field({ label, disabled, children }: { label: string; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className={`block text-sm font-medium mb-1 ${disabled ? "text-gray-400" : "text-gray-700"}`}>{label}</label>
-      {children}
-    </div>
+        <TriState
+          id="session-auto-cancel"
+          label="Ask me to confirm (auto-cancel if not)"
+          value={value.autoCancelEnabled}
+          defaultValue={defaultAutoCancel}
+          onChange={(autoCancelEnabled) => onChange({ autoCancelEnabled })}
+        />
+
+        <Field label="Who can confirm" htmlFor="session-policy" disabled={autoCancelOff}>
+          <NativeSelect
+            id="session-policy"
+            value={value.confirmationPolicy ?? "owner_only"}
+            disabled={autoCancelOff}
+            onChange={(event) => onChange({ confirmationPolicy: event.target.value as ConfirmationPolicy })}
+          >
+            <option value="owner_only">Only me</option>
+            <option value="anyone">Anyone in the channel</option>
+          </NativeSelect>
+        </Field>
+
+        <Field
+          label="Confirm by (hours before)"
+          htmlFor="session-deadline"
+          disabled={autoCancelOff}
+          hint="Never later than the provider's refund deadline."
+        >
+          <Input
+            id="session-deadline"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={336}
+            placeholder="Default"
+            disabled={autoCancelOff}
+            value={value.confirmDeadlineHours ?? ""}
+            onChange={(event) =>
+              onChange({
+                confirmDeadlineHours: event.target.value === "" ? null : Number(event.target.value),
+              })
+            }
+          />
+        </Field>
+      </div>
+
+      {autoCancelOff && (
+        <p className="text-xs text-gray-500">
+          Turn on "Ask me to confirm" to choose who can confirm, the deadline and reminders.
+        </p>
+      )}
+
+      <ToggleRow
+        label="Custom reminders"
+        description="Hours before the confirmation deadline."
+        htmlFor="session-custom-reminders"
+        disabled={autoCancelOff}
+      >
+        <Switch
+          id="session-custom-reminders"
+          checked={value.reminderHours != null}
+          disabled={autoCancelOff}
+          onCheckedChange={(checked) => onChange({ reminderHours: checked ? [12, 2] : null })}
+        />
+      </ToggleRow>
+      {value.reminderHours != null && !autoCancelOff && (
+        <ChipsList
+          items={value.reminderHours.map(String)}
+          onChange={(items) => onChange({ reminderHours: items.map(Number) })}
+          placeholder="e.g. 6"
+          inputMode="numeric"
+          onAddAttempt={(raw) => {
+            const hours = Number(raw);
+            return Number.isInteger(hours) && hours >= 0 && hours <= 336
+              ? { value: String(hours) }
+              : { error: "Reminders must be whole hours between 0 and 336" };
+          }}
+          onError={onError}
+        />
+      )}
+    </FormSection>
   );
 }
 
 function TriState({
+  id,
   label,
   value,
   defaultValue,
   onChange,
 }: {
+  id: string;
   label: string;
   value: boolean | null | undefined;
   defaultValue: boolean;
   onChange: (value: boolean | null) => void;
 }) {
   return (
-    <Field label={label}>
-      <select
-        className={selectClass}
+    <Field label={label} htmlFor={id}>
+      <NativeSelect
+        id={id}
         value={value == null ? "" : value ? "on" : "off"}
         onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "on")}
       >
         <option value="">Default ({defaultValue ? "on" : "off"})</option>
         <option value="on">On</option>
         <option value="off">Off</option>
-      </select>
+      </NativeSelect>
     </Field>
   );
 }
@@ -203,5 +200,5 @@ function summarize(value: NotificationFields, destinations: ChatDestination[]): 
   if (value.autoCancelEnabled === false) parts.push("confirmation off");
   const channel = destinations.find((destination) => destination.id === value.notifyDestinationId);
   if (channel) parts.push(channel.name);
-  return parts.length ? `(${parts.join(", ")})` : "(using defaults)";
+  return parts.length ? parts.join(", ") : "Using your defaults";
 }

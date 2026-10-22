@@ -17,8 +17,6 @@ function buildAuth0ScopeParam(value?: string) {
     .join(" ");
 }
 
-type AppView = "home" | "dashboard";
-
 export default function App() {
   const {
     isAuthenticated,
@@ -33,7 +31,8 @@ export default function App() {
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
-  const [currentView, setCurrentView] = useState<AppView>("home");
+  // Logged-out visitors can open the dashboard with demo data from the home page.
+  const [previewing, setPreviewing] = useState(false);
 
   const displayName = user?.fullName?.trim() || user?.email?.trim() || undefined;
 
@@ -105,14 +104,6 @@ export default function App() {
 
   const handleLogout = () => {
     logout({ logoutParams: { returnTo: window.location.origin } });
-  };
-
-  const handleNavigateToDashboard = () => {
-    setCurrentView("dashboard");
-  };
-
-  const handleNavigateToHome = () => {
-    setCurrentView("home");
   };
 
   // Show loading state
@@ -211,26 +202,20 @@ export default function App() {
     );
   }
 
-  // Show appropriate view based on currentView state
-  if (currentView === "home") {
-    return (
-      <HomePage
-        isAuthenticated={Boolean(isAuthenticated && user)}
-        onLogout={handleLogout}
-        onLogin={handleLogin}
-        onNavigateToDashboard={handleNavigateToDashboard}
-        userName={displayName}
-      />
-    );
+  const signedIn = Boolean(isAuthenticated && user);
+
+  if (!signedIn && !previewing) {
+    return <HomePage onLogin={handleLogin} onPreview={() => setPreviewing(true)} />;
   }
 
   return (
     <Dashboard
-      isAuthenticated={Boolean(isAuthenticated && user)}
+      isAuthenticated={signedIn}
+      userName={displayName}
       getAccessToken={getApiToken}
       onLogin={handleLogin}
       onLogout={handleLogout}
-      onNavigateToHome={handleNavigateToHome}
+      onExitPreview={signedIn ? undefined : () => setPreviewing(false)}
     />
   );
 }

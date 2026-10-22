@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Calendar,
@@ -7,15 +7,24 @@ import {
   CalendarMinus,
   CalendarSync,
   CalendarX2,
-  Clock,
-  Globe,
-  XCircle,
-  CheckCircle,
-  AlertCircle,
+  ChevronDown,
   Filter,
+  RotateCcw,
+  Trash2,
   X,
+  XCircle,
 } from "lucide-react";
 import type { BookingTask, BookingSlot, Provider } from "../../types";
+import { deviceTimezone, formatMoment } from "../../lib/datetime";
+import { ActionMenu, type ActionMenuItem } from "../common/ActionMenu";
+import { ConfirmDialog } from "../common/ConfirmDialog";
+import { Field } from "../common/Field";
+import { FormSheet, FormSheetActions } from "../common/FormSheet";
+import { PageHeader } from "../common/PageHeader";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { NativeSelect } from "../ui/native-select";
+import { cn } from "../ui/utils";
 import { BookingConfirmation } from "./BookingConfirmation";
 
 interface UpcomingTasksProps {
@@ -30,6 +39,8 @@ interface UpcomingTasksProps {
   onCancelBooking: (taskId: number) => Promise<void>;
 }
 
+type StatusFilter = "all" | "pending" | "booked" | "failed" | "cancelled";
+
 export function UpcomingTasks({
   bookingTasks,
   bookingSlots,
@@ -37,7 +48,6 @@ export function UpcomingTasks({
   onCancelTask,
   onReactivateTask,
   onDeleteTask,
-  onExecuteTask,
   onConfirmBooking,
   onCancelBooking,
 }: UpcomingTasksProps) {
@@ -45,6 +55,7 @@ export function UpcomingTasks({
   const [filterSession, setFilterSession] = useState<string>("all");
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [showFilters, setShowFilters] = useState(false);
 
   // Apply filters
@@ -89,6 +100,9 @@ export function UpcomingTasks({
   );
   const failedTasks = sortedTasks.filter((task) => task.status === "failed");
   const cancelledTasks = sortedTasks.filter((task) => task.status === "cancelled");
+  // Most recent first for history sections
+  const recentCompleted = [...completedTasks].reverse();
+  const recentCancelled = [...cancelledTasks].reverse();
 
   const clearFilters = () => {
     setFilterProvider("all");
@@ -97,379 +111,347 @@ export function UpcomingTasks({
     setFilterDateTo("");
   };
 
-  const hasActiveFilters = filterProvider !== "all" || filterSession !== "all" || filterDateFrom || filterDateTo;
+  const activeFilterCount = [filterProvider !== "all", filterSession !== "all", filterDateFrom, filterDateTo].filter(
+    Boolean,
+  ).length;
+
+  const show = (status: StatusFilter) => statusFilter === "all" || statusFilter === status;
+  const toggleStatus = (status: StatusFilter) => setStatusFilter((prev) => (prev === status ? "all" : status));
+
+  const findSlot = (task: BookingTask) => bookingSlots.find((s) => s.id === task.bookingSlotId);
+  const renderTask = (task: BookingTask) => {
+    const slot = findSlot(task);
+    const isActionable = task.status === "pending" || task.status === "failed" || task.status === "cancelled";
+    return (
+      <TaskCard
+        key={task.id}
+        task={task}
+        slot={slot}
+        provider={providers.find((p) => p.id === slot?.providerId)}
+        onCancel={task.status === "pending" ? () => onCancelTask(task.id) : undefined}
+        onReactivate={
+          task.status === "failed" || task.status === "cancelled" ? () => onReactivateTask(task.id) : undefined
+        }
+        onDelete={isActionable && task.status !== "pending" ? () => onDeleteTask(task.id) : undefined}
+        onConfirmBooking={() => onConfirmBooking(task.id)}
+        onCancelBooking={() => onCancelBooking(task.id)}
+      />
+    );
+  };
+
+  const activeFilterChips: { label: string; clear: () => void }[] = [
+    filterProvider !== "all" && {
+      label: providers.find((p) => p.id === parseInt(filterProvider))?.name ?? "Provider",
+      clear: () => setFilterProvider("all"),
+    },
+    filterSession !== "all" && {
+      label: bookingSlots.find((s) => s.id === parseInt(filterSession))?.name ?? "Session",
+      clear: () => setFilterSession("all"),
+    },
+    filterDateFrom && {
+      label: `From ${new Date(filterDateFrom).toLocaleDateString("en-GB")}`,
+      clear: () => setFilterDateFrom(""),
+    },
+    filterDateTo && {
+      label: `To ${new Date(filterDateTo).toLocaleDateString("en-GB")}`,
+      clear: () => setFilterDateTo(""),
+    },
+  ].filter(Boolean) as { label: string; clear: () => void }[];
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="flex items-start justify-between gap-4 mb-2">
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Upcoming Booking Tasks</h2>
-            <p className="text-gray-600">
-              Manage your scheduled bookings. Cancel individual tasks if you don't want a specific
-              booking to be made.
-            </p>
-          </div>
+      <PageHeader
+        title="Upcoming Tasks"
+        description="Each booking session creates a task for every upcoming date. Cancel a task if you don't want that booking made."
+        actions={
           <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium ${
-              hasActiveFilters || showFilters
+            onClick={() => setShowFilters(true)}
+            className={cn(
+              "relative flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors",
+              activeFilterCount > 0
                 ? "bg-green-600 text-white hover:bg-green-700"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
-          >
-            <Filter className="w-5 h-5" />
-            <span className="hidden sm:inline">Filter</span>
-            {hasActiveFilters && <span className="hidden sm:inline">({Object.values({ filterProvider, filterSession, filterDateFrom, filterDateTo }).filter(v => v && v !== "all").length})</span>}
-          </button>
-        </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <div className="mt-4 p-4 bg-white border border-gray-200 rounded-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-800">Filter Tasks</h3>
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="flex items-center gap-1 text-sm text-gray-600 hover:text-red-600 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                  Clear all
-                </button>
-              )}
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Provider Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Provider
-                </label>
-                <select
-                  value={filterProvider}
-                  onChange={(e) => setFilterProvider(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="all">All Providers</option>
-                  {providers.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Session Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Booking Session
-                </label>
-                <select
-                  value={filterSession}
-                  onChange={(e) => setFilterSession(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="all">All Sessions</option>
-                  {bookingSlots.map((slot) => (
-                    <option key={slot.id} value={slot.id}>
-                      {slot.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Date From Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  From Date
-                </label>
-                <input
-                  type="date"
-                  value={filterDateFrom}
-                  onChange={(e) => setFilterDateFrom(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-
-              {/* Date To Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  To Date
-                </label>
-                <input
-                  type="date"
-                  value={filterDateTo}
-                  onChange={(e) => setFilterDateTo(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            {/* Active Filters Display */}
-            {hasActiveFilters && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {filterProvider !== "all" && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                    Provider: {providers.find(p => p.id === parseInt(filterProvider))?.name}
-                    <button onClick={() => setFilterProvider("all")} className="hover:text-green-900">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-                {filterSession !== "all" && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                    Session: {bookingSlots.find(s => s.id === parseInt(filterSession))?.name}
-                    <button onClick={() => setFilterSession("all")} className="hover:text-green-900">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-                {filterDateFrom && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                    From: {new Date(filterDateFrom).toLocaleDateString()}
-                    <button onClick={() => setFilterDateFrom("")} className="hover:text-green-900">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-                {filterDateTo && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                    To: {new Date(filterDateTo).toLocaleDateString()}
-                    <button onClick={() => setFilterDateTo("")} className="hover:text-green-900">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-              </div>
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
-          </div>
-        )}
-      </div>
+            aria-label="Filter tasks"
+          >
+            <Filter className="h-4 w-4" />
+            <span className="hidden sm:inline">Filter</span>
+            {activeFilterCount > 0 && <span>({activeFilterCount})</span>}
+          </button>
+        }
+      />
 
-      {/* Stats Cards */}
-      <div className="mb-2">
-        {hasActiveFilters && (
-          <p className="text-sm text-gray-600">
-            Showing {filteredTasks.length} of {bookingTasks.length} tasks
-          </p>
-        )}
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          icon={<Clock className="w-5 h-5" />}
+      {/* Status counts double as quick filters */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <StatusChip
           label="Pending"
-          value={pendingTasks.length}
-          total={bookingTasks.filter(t => t.status === "pending").length}
-          color="blue"
+          count={pendingTasks.length + processingTasks.length}
+          active={statusFilter === "pending"}
+          onClick={() => toggleStatus("pending")}
+          tone="blue"
         />
-        <StatCard
-          icon={<CheckCircle className="w-5 h-5" />}
-          label="Completed"
-          value={completedTasks.length}
-          total={bookingTasks.filter(t => t.status === "success").length}
-          color="green"
+        <StatusChip
+          label="Booked"
+          count={awaitingTasks.length + completedTasks.length}
+          active={statusFilter === "booked"}
+          onClick={() => toggleStatus("booked")}
+          tone="green"
         />
-        <StatCard
-          icon={<AlertCircle className="w-5 h-5" />}
+        <StatusChip
           label="Failed"
-          value={failedTasks.length}
-          total={bookingTasks.filter(t => t.status === "failed").length}
-          color="red"
+          count={failedTasks.length}
+          active={statusFilter === "failed"}
+          onClick={() => toggleStatus("failed")}
+          tone="red"
         />
-        <StatCard
-          icon={<XCircle className="w-5 h-5" />}
+        <StatusChip
           label="Cancelled"
-          value={cancelledTasks.length}
-          total={bookingTasks.filter(t => t.status === "cancelled").length}
-          color="gray"
+          count={cancelledTasks.length}
+          active={statusFilter === "cancelled"}
+          onClick={() => toggleStatus("cancelled")}
+          tone="gray"
         />
       </div>
 
-      {/* Pending Tasks */}
-      {awaitingTasks.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Needs your confirmation</h3>
-          <div className="space-y-3">
-            {awaitingTasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
-                provider={providers.find(
-                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
-                )}
-                onConfirmBooking={() => onConfirmBooking(task.id)}
-                onCancelBooking={() => onCancelBooking(task.id)}
-              />
-            ))}
-          </div>
+      {activeFilterChips.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          {activeFilterChips.map((chip) => (
+            <span
+              key={chip.label}
+              className="inline-flex max-w-full items-center gap-1 rounded-full bg-green-100 py-1 pl-3 pr-1 text-green-800"
+            >
+              <span className="truncate">{chip.label}</span>
+              <button
+                onClick={chip.clear}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full hover:bg-green-200"
+                aria-label={`Remove filter ${chip.label}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+          <span className="text-gray-500">
+            {filteredTasks.length} of {bookingTasks.length}
+          </span>
         </div>
       )}
 
-      {pendingTasks.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Pending Tasks</h3>
-          <div className="space-y-3">
-            {pendingTasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
-                provider={providers.find(
-                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
-                )}
-                onCancel={() => onCancelTask(task.id)}
-                onDelete={() => onDeleteTask(task.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="space-y-6">
+        {show("booked") && awaitingTasks.length > 0 && (
+          <TaskSection title="Needs your confirmation" count={awaitingTasks.length}>
+            {awaitingTasks.map(renderTask)}
+          </TaskSection>
+        )}
 
-      {/* Processing Tasks */}
-      {processingTasks.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Processing Tasks</h3>
-          <div className="space-y-3">
-            {processingTasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
-                provider={providers.find(
-                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
-                )}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        {show("pending") && pendingTasks.length > 0 && (
+          <TaskSection title="Pending" count={pendingTasks.length}>
+            {pendingTasks.map(renderTask)}
+          </TaskSection>
+        )}
 
-      {/* Failed Tasks */}
-      {failedTasks.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Failed Tasks</h3>
-          <div className="space-y-3">
-            {failedTasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
-                provider={providers.find(
-                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
-                )}
-                onReactivate={() => onReactivateTask(task.id)}
-                onDelete={() => onDeleteTask(task.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        {show("pending") && processingTasks.length > 0 && (
+          <TaskSection title="Processing" count={processingTasks.length}>
+            {processingTasks.map(renderTask)}
+          </TaskSection>
+        )}
 
-      {/* Completed Tasks */}
-      {completedTasks.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Completed Tasks</h3>
-          <div className="space-y-3">
-            {completedTasks.slice(0, 10).map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
-                provider={providers.find(
-                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
-                )}
-                onDelete={() => onDeleteTask(task.id)}
-                onConfirmBooking={() => onConfirmBooking(task.id)}
-                onCancelBooking={() => onCancelBooking(task.id)}
-              />
-            ))}
-          </div>
-          {completedTasks.length > 10 && (
-            <p className="text-sm text-gray-500 mt-3">
-              Showing 10 of {completedTasks.length} completed tasks
-            </p>
-          )}
-        </div>
-      )}
+        {show("failed") && failedTasks.length > 0 && (
+          <TaskSection title="Failed" count={failedTasks.length}>
+            {failedTasks.map(renderTask)}
+          </TaskSection>
+        )}
 
-      {/* Cancelled Tasks */}
-      {cancelledTasks.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Cancelled Tasks</h3>
-          <div className="space-y-3">
-            {cancelledTasks.slice(0, 5).map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                slot={bookingSlots.find((s) => s.id === task.bookingSlotId)}
-                provider={providers.find(
-                  (p) => p.id === bookingSlots.find((s) => s.id === task.bookingSlotId)?.providerId
-                )}
-                onReactivate={() => onReactivateTask(task.id)}
-                onDelete={() => onDeleteTask(task.id)}
-              />
-            ))}
-          </div>
-          {cancelledTasks.length > 5 && (
-            <p className="text-sm text-gray-500 mt-3">
-              Showing 5 of {cancelledTasks.length} cancelled tasks
-            </p>
-          )}
-        </div>
-      )}
+        {show("booked") && completedTasks.length > 0 && (
+          <TaskSection
+            title="Booked"
+            count={completedTasks.length}
+            collapsible
+            defaultOpen={statusFilter === "booked"}
+            limit={10}
+          >
+            {recentCompleted.map(renderTask)}
+          </TaskSection>
+        )}
+
+        {show("cancelled") && cancelledTasks.length > 0 && (
+          <TaskSection
+            title="Cancelled"
+            count={cancelledTasks.length}
+            collapsible
+            defaultOpen={statusFilter === "cancelled"}
+            limit={10}
+          >
+            {recentCancelled.map(renderTask)}
+          </TaskSection>
+        )}
+      </div>
 
       {bookingTasks.length === 0 && (
-        <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Calendar className="w-8 h-8 text-gray-400" />
+        <div className="text-center py-12 px-4 bg-white rounded-xl border border-gray-200">
+          <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Calendar className="w-7 h-7 text-gray-400" />
           </div>
-          <h3 className="text-xl font-semibold mb-2 text-gray-800">No Booking Tasks Yet</h3>
-          <p className="text-gray-600">
-            Create a booking session to start seeing scheduled tasks here.
-          </p>
+          <h3 className="text-lg font-semibold mb-1 text-gray-800">No booking tasks yet</h3>
+          <p className="text-gray-600">Create a booking session to start seeing scheduled tasks here.</p>
         </div>
+      )}
+
+      {showFilters && (
+        <FormSheet
+          title="Filter tasks"
+          onClose={() => setShowFilters(false)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            setShowFilters(false);
+          }}
+          footer={
+            <FormSheetActions>
+              <Button type="button" variant="outline" size="lg" onClick={clearFilters} disabled={activeFilterCount === 0}>
+                Clear all
+              </Button>
+              <Button type="submit" size="lg">
+                Show {filteredTasks.length} {filteredTasks.length === 1 ? "task" : "tasks"}
+              </Button>
+            </FormSheetActions>
+          }
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Provider" htmlFor="filter-provider">
+              <NativeSelect id="filter-provider" value={filterProvider} onChange={(e) => setFilterProvider(e.target.value)}>
+                <option value="all">All providers</option>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="Booking session" htmlFor="filter-session">
+              <NativeSelect id="filter-session" value={filterSession} onChange={(e) => setFilterSession(e.target.value)}>
+                <option value="all">All sessions</option>
+                {bookingSlots.map((slot) => (
+                  <option key={slot.id} value={slot.id}>
+                    {slot.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="From date" htmlFor="filter-from">
+              <Input id="filter-from" type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
+            </Field>
+            <Field label="To date" htmlFor="filter-to">
+              <Input id="filter-to" type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
+            </Field>
+          </div>
+        </FormSheet>
       )}
     </div>
   );
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  total,
-  color,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  total?: number;
-  color: "blue" | "green" | "red" | "gray";
-}) {
-  const colorClasses = {
-    blue: "bg-blue-100 text-blue-800 border-blue-200",
-    green: "bg-green-100 text-green-800 border-green-200",
-    red: "bg-red-100 text-red-800 border-red-200",
-    gray: "bg-gray-100 text-gray-700 border-gray-200",
-  };
+const CHIP_TONES = {
+  blue: { idle: "border-blue-200 bg-blue-50 text-blue-800", active: "border-blue-600 bg-blue-600 text-white" },
+  green: { idle: "border-green-200 bg-green-50 text-green-800", active: "border-green-600 bg-green-600 text-white" },
+  red: { idle: "border-red-200 bg-red-50 text-red-800", active: "border-red-600 bg-red-600 text-white" },
+  gray: { idle: "border-gray-200 bg-gray-50 text-gray-700", active: "border-gray-600 bg-gray-600 text-white" },
+};
 
+function StatusChip({
+  label,
+  count,
+  active,
+  onClick,
+  tone,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  tone: keyof typeof CHIP_TONES;
+}) {
+  if (count === 0 && !active) return null;
   return (
-    <div
-      className={`${colorClasses[color]} border rounded-xl p-4 flex flex-col items-center justify-center`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors",
+        active ? CHIP_TONES[tone].active : CHIP_TONES[tone].idle,
+      )}
     >
-      <div className="mb-2">{icon}</div>
-      <div className="text-2xl font-bold">
-        {value}
-        {total !== undefined && total !== value && (
-          <span className="text-sm font-normal text-gray-500 ml-1">/ {total}</span>
-        )}
-      </div>
-      <div className="text-xs font-medium">{label}</div>
-    </div>
+      <span className="font-bold tabular-nums">{count}</span>
+      {label}
+    </button>
   );
 }
+
+function TaskSection({
+  title,
+  count,
+  collapsible = false,
+  defaultOpen = true,
+  limit,
+  children,
+}: {
+  title: string;
+  count: number;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  limit?: number;
+  children: ReactNode[];
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [showAll, setShowAll] = useState(false);
+  const visible = limit && !showAll ? children.slice(0, limit) : children;
+
+  const heading = (
+    <>
+      <span className="text-base font-semibold text-gray-800">{title}</span>
+      <span className="text-sm font-normal text-gray-500">{count}</span>
+    </>
+  );
+
+  return (
+    <section>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          aria-expanded={open}
+          className="mb-3 flex w-full items-center gap-2 text-left"
+        >
+          {heading}
+          <ChevronDown className={cn("ml-auto h-5 w-5 text-gray-400 transition-transform", open && "rotate-180")} />
+        </button>
+      ) : (
+        <h3 className="mb-3 flex items-center gap-2">{heading}</h3>
+      )}
+      {open && (
+        <>
+          <div className="space-y-3">{visible}</div>
+          {limit && children.length > limit && (
+            <button
+              type="button"
+              onClick={() => setShowAll((prev) => !prev)}
+              className="mt-3 h-10 w-full rounded-lg text-sm font-medium text-green-700 hover:bg-green-50"
+            >
+              {showAll ? "Show fewer" : `Show all ${children.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+const STATUS_STYLE: Record<string, { icon: LucideIcon; background: string }> = {
+  pending: { icon: CalendarClock, background: "bg-blue-500" },
+  processing: { icon: CalendarSync, background: "bg-indigo-500" },
+  success: { icon: CalendarCheck2, background: "bg-emerald-500" },
+  failed: { icon: CalendarX2, background: "bg-rose-500" },
+  cancelled: { icon: CalendarMinus, background: "bg-slate-500" },
+};
 
 function TaskCard({
   task,
@@ -477,7 +459,6 @@ function TaskCard({
   provider,
   onCancel,
   onReactivate,
-  onExecute,
   onDelete,
   onConfirmBooking,
   onCancelBooking,
@@ -485,144 +466,102 @@ function TaskCard({
   task: BookingTask;
   slot?: BookingSlot;
   provider?: Provider;
-  onCancel?: () => void;
-  onReactivate?: () => void;
-  onExecute?: () => void;
-  onDelete?: () => void;
+  onCancel?: () => Promise<void>;
+  onReactivate?: () => Promise<void>;
+  onDelete?: () => Promise<void>;
   onConfirmBooking?: () => Promise<void>;
   onCancelBooking?: () => Promise<void>;
 }) {
-  const iconBackgroundClasses: Record<string, string> = {
-    pending: "bg-blue-500",
-    processing: "bg-indigo-500",
-    success: "bg-emerald-500",
-    failed: "bg-rose-500",
-    cancelled: "bg-slate-500",
-    default: "bg-slate-500",
+  const [showDetails, setShowDetails] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const style = STATUS_STYLE[task.status] ?? STATUS_STYLE.pending;
+  const StateIcon = style.icon;
+  const timezone = slot?.timezone || deviceTimezone();
+  const showTimezone = timezone !== deviceTimezone();
+  const hasError = Boolean(task.errorMessage && task.errorMessage.trim().toLowerCase() !== "slot was deactivated");
+
+  const run = (action?: () => Promise<void>) => () => {
+    action?.().catch(() => null); // Dashboard surfaces the error
   };
 
-  const iconBackground = iconBackgroundClasses[task.status] || iconBackgroundClasses.default;
-
-  const stateIconMap: Record<string, LucideIcon> = {
-    pending: CalendarClock,
-    processing: CalendarSync,
-    success: CalendarCheck2,
-    failed: CalendarX2,
-    cancelled: CalendarMinus,
-  };
-
-  const StateIcon = stateIconMap[task.status] || CalendarClock;
-
-  const timezoneDisplay = slot?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  const formatDate = (dateString: string) => {
-    // API returns naive UTC strings without Z — append Z to force correct UTC parsing
-    const utcString = /[Z+]/.test(dateString) ? dateString : dateString + "Z";
-    const date = new Date(utcString);
-    const tzOptions = { timeZone: timezoneDisplay };
-    const datePart = new Intl.DateTimeFormat("en-GB", {
-      ...tzOptions,
-      day: "2-digit",
-      month: "short",
-      year: "2-digit",
-    }).format(date);
-    const timePart = new Intl.DateTimeFormat("en-GB", {
-      ...tzOptions,
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-    return `${datePart} · ${timePart}`;
-  };
+  const menuItems: ActionMenuItem[] = [
+    onReactivate && { label: "Reactivate", icon: RotateCcw, onSelect: run(onReactivate) },
+    onCancel && { label: "Cancel task", icon: XCircle, onSelect: run(onCancel), destructive: true },
+    onDelete && { label: "Delete", icon: Trash2, onSelect: () => setConfirmingDelete(true), destructive: true },
+  ].filter(Boolean) as ActionMenuItem[];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
-      <div className="grid grid-cols-[auto,1fr] gap-4">
-        {/* Status Icon */}
+    <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4">
+      <div className="flex items-start gap-3">
         <div
-          className={`${iconBackground} w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transform -rotate-6`}
+          className={`${style.background} w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transform -rotate-6`}
         >
-          <StateIcon className="w-6 h-6 text-white" />
+          <StateIcon className="w-5 h-5 text-white" />
         </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-4 mb-3">
-            <div className="flex-1 min-w-0">
-              <h4 className="font-semibold text-gray-800 text-lg mb-1">
-                {slot?.name || "Unknown Session"}
-              </h4>
-              <div className="text-sm text-gray-600">
-                {provider?.name || "Unknown Provider"}
-              </div>
-            </div>
-            
-            {/* Status Badge with Action Button */}
-            <div className="flex items-center gap-2">
-              {/* Action buttons */}
-              {onCancel && (task.status === "pending" || task.status === "failed") && (
-                <button
-                  onClick={onCancel}
-                  className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors whitespace-nowrap"
-                  title="Cancel task"
-                >
-                  Cancel Task
-                </button>
-              )}
-              {onReactivate && task.status === "cancelled" && (
-                <button
-                  onClick={onReactivate}
-                  className="px-4 py-2 text-sm font-medium text-green-600 hover:bg-green-50 rounded-lg transition-colors whitespace-nowrap"
-                  title="Reactivate task"
-                >
-                  Reactivate
-                </button>
-              )}
-              {onDelete && (task.status === "cancelled" || task.status === "failed") && (
-                <button
-                  onClick={onDelete}
-                  className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors whitespace-nowrap"
-                  title="Delete task"
-                >
-                  Delete
-                </button>
-              )}
-            </div>
-          </div>
+        <div className="min-w-0 flex-1">
+          <h4 className="font-semibold text-gray-800 truncate">{slot?.name || "Unknown session"}</h4>
+          <p className="text-sm text-gray-600">{formatMoment(task.scheduledDate, timezone)}</p>
         </div>
+
+        {menuItems.length > 0 && <ActionMenu items={menuItems} />}
       </div>
 
-      {/* Dates - Full-width to sit beneath icon */}
-      <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-gray-600">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <span>Executes: {formatDate(task.attemptAt || task.scheduledDate)}</span>
+      {hasError && (
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2.5 text-sm text-red-800 break-words">
+          {task.errorMessage}
         </div>
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <span>Target: {formatDate(task.scheduledDate)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Globe className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <span>Timezone: {timezoneDisplay}</span>
-        </div>
-      </div>
+      )}
 
-      {/* Booked Details */}
+      {/* Booked details */}
       {task.status === "success" && (task.bookedTime || task.bookedResource) && (
         <BookingConfirmation
           task={task}
-          timezone={timezoneDisplay}
+          timezone={timezone}
           onConfirm={onConfirmBooking}
           onCancelBooking={onCancelBooking}
         />
       )}
 
-      {/* Error Message */}
-      {task.errorMessage && task.errorMessage.trim().toLowerCase() !== "slot was deactivated" && (
-        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
-          <span className="font-medium">Error:</span> {task.errorMessage}
-        </div>
+      <button
+        type="button"
+        onClick={() => setShowDetails((prev) => !prev)}
+        aria-expanded={showDetails}
+        className="mt-2 -mb-1 flex h-8 items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+      >
+        Details
+        <ChevronDown className={cn("h-4 w-4 transition-transform", showDetails && "rotate-180")} />
+      </button>
+      {showDetails && (
+        <dl className="mt-1 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+          <dt className="text-gray-500">Books at</dt>
+          <dd className="text-gray-800">{formatMoment(task.attemptAt || task.scheduledDate, timezone)}</dd>
+          {task.attemptedAt && (
+            <>
+              <dt className="text-gray-500">Attempted</dt>
+              <dd className="text-gray-800">{formatMoment(task.attemptedAt, timezone)}</dd>
+            </>
+          )}
+          <dt className="text-gray-500">Provider</dt>
+          <dd className="text-gray-800 truncate">{provider?.name || "Unknown provider"}</dd>
+          {showTimezone && (
+            <>
+              <dt className="text-gray-500">Timezone</dt>
+              <dd className="text-gray-800">{timezone}</dd>
+            </>
+          )}
+        </dl>
       )}
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete this task?"
+        description="It will be removed from your task list."
+        confirmLabel="Delete"
+        onConfirm={run(onDelete)}
+      />
     </div>
   );
 }

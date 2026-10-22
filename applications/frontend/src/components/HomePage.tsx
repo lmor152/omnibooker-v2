@@ -1,81 +1,59 @@
 import { Calendar, CalendarCheck, CalendarCog, CalendarSync, CheckCircle } from "lucide-react";
 
 interface HomePageProps {
-  onNavigateToDashboard: () => void;
   onLogin: () => void;
-  onLogout: () => void;
-  isAuthenticated: boolean;
-  userName?: string;
+  onPreview: () => void;
 }
 
-export function HomePage({ onNavigateToDashboard, onLogin, onLogout, isAuthenticated, userName }: HomePageProps) {
-  const displayName = userName?.trim();
-  const userInitial = displayName?.charAt(0)?.toUpperCase();
-  const accountButtonLabel = isAuthenticated ? "Logout" : "Log in";
-  const accountButtonAction = isAuthenticated ? onLogout : onLogin;
-
+/** Landing page, shown only to logged-out visitors. */
+export function HomePage({ onLogin, onPreview }: HomePageProps) {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl overflow-hidden border border-green-100 shadow-sm transform -rotate-3 bg-white flex items-center justify-center">
-                <img src="/favicon.png" alt="Bookie Monster" className="w-9 h-9 object-contain" />
-              </div>
-              <h1 className="text-green-700 text-2xl font-bold">Bookie Monster</h1>
+      <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50 pt-safe px-safe">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl overflow-hidden border border-green-100 shadow-sm transform -rotate-3 bg-white flex items-center justify-center shrink-0">
+              <img src="/favicon.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 object-contain" />
             </div>
-            <div className="flex items-center gap-3">
-              {displayName && (
-                <div className="flex items-center gap-2 border border-gray-200 rounded-full bg-white px-3 py-1.5 shadow-sm">
-                  <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-semibold">
-                    {userInitial}
-                  </div>
-                  <div className="hidden sm:flex flex-col leading-tight">
-                    <span className="text-[11px] uppercase tracking-wide text-gray-400">Signed in</span>
-                    <span className="text-sm font-medium text-gray-800">{displayName}</span>
-                  </div>
-                </div>
-              )}
-              <button
-                onClick={accountButtonAction}
-                className="px-4 py-2 border border-gray-200 rounded-full bg-white text-gray-700 hover:border-green-500 hover:text-green-700 transition-colors"
-              >
-                {accountButtonLabel}
-              </button>
-              <button
-                onClick={onNavigateToDashboard}
-                className="px-6 py-2.5 bg-green-600 text-white rounded-full hover:bg-green-700 transition-colors"
-              >
-                Go to Dashboard
-              </button>
-            </div>
+            <h1 className="text-green-700 text-lg sm:text-2xl font-bold truncate">Bookie Monster</h1>
           </div>
+          <button
+            onClick={onLogin}
+            className="shrink-0 h-10 px-5 bg-green-600 text-white rounded-full text-sm font-medium hover:bg-green-700 transition-colors"
+          >
+            Log in
+          </button>
         </div>
       </header>
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-white to-green-50/30 py-16 sm:py-24">
+      <section className="relative overflow-hidden bg-gradient-to-b from-white to-green-50/30 py-10 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-12 items-center">
             <div className="text-center lg:text-left">
-              <p className="text-sm uppercase tracking-[0.2em] text-green-600 mb-4">
+              <p className="text-xs sm:text-sm uppercase tracking-[0.2em] text-green-600 mb-3 sm:mb-4">
                 Automated booking assistant
               </p>
-              <h2 className="text-4xl sm:text-5xl font-bold mb-6 text-green-800">
+              <h2 className="text-3xl sm:text-5xl font-bold mb-4 sm:mb-6 text-green-800">
                 Never Miss a Booking Again
               </h2>
-              <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto lg:mx-0">
+              <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8 max-w-2xl mx-auto lg:mx-0">
                 Bookie Monster automatically books your favourite recurring sessions: tennis courts,
                 gym classes, and more. Set it once, and let the monster handle the rest!
               </p>
-              <div className="flex justify-center lg:justify-start">
+              <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
                 <button
-                  onClick={onNavigateToDashboard}
-                  className="px-10 py-4 bg-green-600 text-white rounded-full hover:bg-green-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl text-lg font-semibold"
+                  onClick={onLogin}
+                  className="w-full sm:w-auto px-10 py-3.5 bg-green-600 text-white rounded-full hover:bg-green-700 transition-all shadow-lg hover:shadow-xl text-lg font-semibold"
                 >
-                  Start
+                  Log in
+                </button>
+                <button
+                  onClick={onPreview}
+                  className="w-full sm:w-auto px-6 py-3 text-green-700 font-medium rounded-full hover:bg-green-50 transition-colors"
+                >
+                  Preview the dashboard
                 </button>
               </div>
             </div>
@@ -84,7 +62,7 @@ export function HomePage({ onNavigateToDashboard, onLogin, onLogout, isAuthentic
                 <img
                   src="/images/welcome.png"
                   alt="Illustration of automated booking"
-                  className="w-full max-w-md rounded-[2.5rem] shadow-2xl"
+                  className="w-full max-w-xs sm:max-w-md rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl"
                 />
                 <div className="absolute -top-6 -left-6 w-24 h-24 bg-green-200 rounded-3xl opacity-60 blur-xl" />
                 <div className="absolute -bottom-8 -right-10 w-32 h-32 bg-green-400 rounded-full opacity-20" />
@@ -99,13 +77,13 @@ export function HomePage({ onNavigateToDashboard, onLogin, onLogout, isAuthentic
       </section>
 
       {/* Features Section */}
-      <section className="py-16 sm:py-24 bg-white">
+      <section className="py-12 sm:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h3 className="text-3xl font-bold text-center mb-12 text-gray-800">
+          <h3 className="text-2xl sm:text-3xl font-bold text-center mb-10 sm:mb-12 text-gray-800">
             How Bookie Monster Works
           </h3>
 
-          <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
+          <div className="grid md:grid-cols-3 gap-8 lg:gap-12 px-2 sm:px-0">
             <FeatureCard
               icon={<CalendarCog className="w-8 h-8" />}
               title="Connect Your Providers"
@@ -129,11 +107,11 @@ export function HomePage({ onNavigateToDashboard, onLogin, onLogout, isAuthentic
       </section>
 
       {/* Benefits Section */}
-      <section className="py-16 sm:py-24 bg-gradient-to-b from-green-50/50 to-white">
+      <section className="overflow-hidden py-12 sm:py-24 bg-gradient-to-b from-green-50/50 to-white pb-[max(3rem,env(safe-area-inset-bottom))]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <h3 className="text-3xl font-bold mb-6 text-gray-800">
+              <h3 className="text-2xl sm:text-3xl font-bold mb-6 text-gray-800">
                 Why Use Bookie Monster?
               </h3>
               <div className="space-y-4">
@@ -155,14 +133,14 @@ export function HomePage({ onNavigateToDashboard, onLogin, onLogout, isAuthentic
                 />
               </div>
               <button
-                onClick={onNavigateToDashboard}
-                className="mt-8 px-8 py-4 bg-green-600 text-white rounded-full hover:bg-green-700 transition-colors font-medium"
+                onClick={onLogin}
+                className="mt-8 w-full sm:w-auto px-8 py-3.5 bg-green-600 text-white rounded-full hover:bg-green-700 transition-colors font-medium"
               >
                 Get Started Now
               </button>
             </div>
 
-            <div className="relative">
+            <div className="relative hidden md:block">
               <div className="bg-gradient-to-br from-green-100 to-green-50 rounded-3xl p-8 shadow-xl">
                 <div className="space-y-4">
                   <div className="bg-white rounded-xl p-4 shadow-sm">
@@ -227,7 +205,7 @@ function FeatureCard({
       <div className="absolute -top-4 -left-4 w-12 h-12 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-lg">
         {step}
       </div>
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+      <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
         <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4 text-green-600">
           {icon}
         </div>
