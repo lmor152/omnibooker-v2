@@ -154,6 +154,13 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
         except ClubsparkAPIError as exc:
             logger.warning("Clubspark API failure: %s", exc)
             return BookingResult(success=False, message=str(exc))
+        except Exception as exc:  # pylint: disable=broad-except
+            # Nothing has been booked yet, so this is safe to report and retry.
+            logger.warning("Unexpected ClubSpark availability reply: %s", exc)
+            return BookingResult(
+                success=False,
+                message="ClubSpark sent an unexpected reply when checking availability. Nothing was booked.",
+            )
 
         if availability.Result < 0:
             # Seen when the account already holds the venue's MaximumBookings for the day.
@@ -166,7 +173,8 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
             )
         if not availability.Times:
             return BookingResult(
-                success=False, message="No availability returned by Clubspark"
+                success=False,
+                message=f"No courts available at {options.courtSlug} on {target_date}",
             )
 
         logger.info(
@@ -239,6 +247,7 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
                 logger.warning("Payment response missing ID: %s", payment)
                 continue
 
+            label = _minutes_to_label(ranked.start_time)
             try:
                 session = cs_client.request_session(
                     venue_slug=options.courtSlug,
@@ -250,46 +259,57 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
                     resource_id=ranked.resource.ID,
                     session_id=ranked.resource.SessionID,
                 )
-            except ClubsparkAPIError as exc:
-                logger.warning("Session request failed: %s", exc)
-                continue
+            except Exception as exc:  # pylint: disable=broad-except
+                # Timeouts, server errors and unexpected replies all happen *after* the request
+                # was sent, so the court may well be booked. Check before deciding.
+                logger.warning(
+                    "Session request for %s at %s errored, checking whether it booked: %s",
+                    ranked.resource.Name,
+                    label,
+                    exc,
+                )
+                try:
+                    found = _find_booked_session(cs_client, options.courtSlug, target_date, ranked)
+                except Exception as lookup_exc:  # pylint: disable=broad-except
+                    logger.error("Could not check ClubSpark bookings after an error: %s", lookup_exc)
+                    # Don't try other courts: this one may be booked already.
+                    return BookingResult(
+                        success=False,
+                        message=(
+                            f"The booking request for {ranked.resource.Name} at {label} didn't get a clear "
+                            "answer from ClubSpark, so it may have gone through. Check ClubSpark before retrying."
+                        ),
+                    )
+                if found is None:
+                    logger.info("No booking found after the error; trying the next court")
+                    continue
+                logger.info("Booking %s exists despite the error; recording it", found.ID)
+                return _booked_result(
+                    context, options, venue_settings, ranked, duration, target_date,
+                    payment_id=payment.ID,
+                    session_id=found.ID,
+                    transaction_id=found.PaymentTransactionID,
+                    resource_id=found.Resource.ID,
+                )
 
             if session.Result < 0:
                 logger.warning("Session request negative result: %s", session.Result)
                 continue
 
-            confirmation = session.TransactionID or payment.ID
-            return BookingResult(
-                success=True,
-                confirmation_code=confirmation,
-                booked_time=_minutes_to_label(ranked.start_time),
-                booked_resource=ranked.resource.Name,
-                cost=ranked.resource.Cost,
-                currency="GBP",
-                message=(
-                    f"Booked {options.courtSlug} {ranked.resource.Name} "
-                    f"at {_minutes_to_label(ranked.start_time)}"
-                ),
-                metadata={
-                    "provider": "clubspark",
-                    "venue_slug": options.courtSlug,
-                    "venue_id": venue_settings.Venue.ID,
-                    "resource_id": session.ResourceID or ranked.resource.ID,
-                    # RequestSession's SessionID is the ID CancelUserSession expects.
-                    "session_id": session.SessionID,
-                    "slot_session_id": ranked.resource.SessionID,
-                    "payment_id": payment.ID,
-                    "transaction_id": session.TransactionID,
-                    "date": target_date,
-                    "start_minutes": ranked.start_time,
-                    "duration": duration,
-                    "refund_window": venue_settings.Venue.BookingRefundWindow,
-                    # BookingRefundWindow is in hours before the session start.
-                    "refund_deadline_utc": (
-                        context.task.scheduled_start_utc
-                        - timedelta(hours=venue_settings.Venue.BookingRefundWindow)
-                    ).isoformat(),
-                },
+            session_id = session.SessionID
+            if not session_id:
+                # Booked, but the reply didn't include the id needed to cancel later. Look it up.
+                try:
+                    found = _find_booked_session(cs_client, options.courtSlug, target_date, ranked)
+                    session_id = found.ID if found else None
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.warning("Could not look up the new booking's session id: %s", exc)
+            return _booked_result(
+                context, options, venue_settings, ranked, duration, target_date,
+                payment_id=payment.ID,
+                session_id=session_id,
+                transaction_id=session.TransactionID,
+                resource_id=session.ResourceID,
             )
 
     logger.error(
@@ -300,6 +320,68 @@ def _book_clubspark(context: BookingContext) -> BookingResult:
         success=False,
         message="Unable to confirm booking with Clubspark after multiple attempts",
     )
+
+
+def _booked_result(
+    context: BookingContext,
+    options,
+    venue_settings,
+    ranked,
+    duration: int,
+    target_date: str,
+    *,
+    payment_id: str | None,
+    session_id: str | None,
+    transaction_id: str | None,
+    resource_id: str | None,
+) -> BookingResult:
+    label = _minutes_to_label(ranked.start_time)
+    return BookingResult(
+        success=True,
+        confirmation_code=transaction_id or payment_id,
+        booked_time=label,
+        booked_resource=ranked.resource.Name,
+        cost=ranked.resource.Cost,
+        currency="GBP",
+        message=f"Booked {options.courtSlug} {ranked.resource.Name} at {label}",
+        metadata={
+            "provider": "clubspark",
+            "venue_slug": options.courtSlug,
+            "venue_id": venue_settings.Venue.ID,
+            "resource_id": resource_id or ranked.resource.ID,
+            # RequestSession's SessionID is the ID CancelUserSession expects.
+            "session_id": session_id,
+            "slot_session_id": ranked.resource.SessionID,
+            "payment_id": payment_id,
+            "transaction_id": transaction_id,
+            "date": target_date,
+            "start_minutes": ranked.start_time,
+            "duration": duration,
+            "refund_window": venue_settings.Venue.BookingRefundWindow,
+            # BookingRefundWindow is in hours before the session start.
+            "refund_deadline_utc": (
+                context.task.scheduled_start_utc
+                - timedelta(hours=venue_settings.Venue.BookingRefundWindow)
+            ).isoformat(),
+        },
+    )
+
+
+def _find_booked_session(cs_client: ClubsparkClient, venue_slug: str, target_date: str, ranked) -> UserSession | None:
+    """The user's live booking of exactly this court, date and start time, if there is one."""
+
+    label = _minutes_to_label(ranked.start_time)
+    sessions = cs_client.get_user_sessions(start_date=target_date, end_date=target_date).Sessions
+    for session in sessions:
+        if session.IsDeleted or session.CurrentStatus == 3:
+            continue
+        if (session.Venue.UrlSegment or "").lower() != venue_slug.lower():
+            continue
+        if session.Date.date().isoformat() != target_date or session.StartTime[:5] != label:
+            continue
+        if session.Resource.ID == ranked.resource.ID:
+            return session
+    return None
 
 
 def _cancel_clubspark(context: CancelContext) -> CancelResult:

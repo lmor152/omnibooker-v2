@@ -42,7 +42,7 @@ export function taskSummary(task: BookingTask, now = Date.now()): string {
         .filter(Boolean)
         .join(" · ");
     case "failed":
-      return task.errorMessage || "Couldn't book";
+      return `Booking attempt failed: ${task.errorMessage || "no reason given"}`;
     case "skipped":
       return "You skipped this date";
     case "cancel_problem":

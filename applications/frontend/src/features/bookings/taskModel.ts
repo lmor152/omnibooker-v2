@@ -107,7 +107,7 @@ export function kindLabel(task: BookingTask): string {
     case "cancel_problem":
       return task.confirmationStatus === "manual_cancel_required" ? "Cancel it yourself" : "Cancel may have failed";
     case "failed":
-      return "Failed";
+      return "Not booked";
     case "skipped":
       return "Skipped";
   }

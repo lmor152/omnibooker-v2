@@ -92,9 +92,10 @@ class TimeSlot(BaseModel):
 
 
 class GetAvailabilityTimesResponse(BaseModel):
-    Result: int
-    SessionID: str
-    Times: list[TimeSlot]
+    Result: int = 0
+    # Omitted when nothing is available (e.g. {"Result": 0, "Times": []}).
+    SessionID: str | None = None
+    Times: list[TimeSlot] = []
 
 
 class GetVenueCreditResponse(BaseModel):
@@ -111,13 +112,15 @@ class CreatePaymentResponse(BaseModel):
 
 
 class RequestSessionResponse(BaseModel):
-    Result: int
-    ResourceID: str
-    SessionID: str
-    TimeZone: str
-    Attended: bool
-    TransactionID: str
-    HardwareIntegrationPIN: str
+    # RequestSession is the call that actually books. Everything but Result is optional so a
+    # reply in an unexpected shape never turns a real booking into a reported failure.
+    Result: int = 0
+    ResourceID: str | None = None
+    SessionID: str | None = None
+    TimeZone: str | None = None
+    Attended: bool | None = None
+    TransactionID: str | None = None
+    HardwareIntegrationPIN: str | None = None
 
 
 class UserSessionVenue(BaseModel):

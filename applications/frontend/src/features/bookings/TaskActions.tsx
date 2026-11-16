@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { toast } from "sonner";
 import type { BookingSlot, BookingTask, Provider } from "../../types";
 import { useData } from "../../app/data";
-import { formatMoment, formatRelative } from "../../lib/datetime";
+import { formatMoment, formatRelative, withZone } from "../../lib/datetime";
 import { ConfirmDialog } from "../../components/common/ConfirmDialog";
 import type { TaskAction } from "./taskModel";
 
@@ -183,6 +183,22 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
           cancelLabel: "Not now",
           destructive: false,
         });
+      } else if (action === "retry") {
+        const provider = slot ? data.providers.find((p) => p.id === slot.providerId) : undefined;
+        const opened = task.attemptAt && Date.parse(withZone(task.attemptAt)) <= Date.now();
+        setConfirm({
+          task,
+          action,
+          title: "Try booking again?",
+          description: `${
+            opened ? "Booking for this date is already open, so this tries again straight away" : "This tries again when booking opens"
+          }${task.attemptAt ? ` (${formatMoment(task.attemptAt, tz)})` : ""}. If you think the last attempt actually went through, check ${
+            provider?.name ?? "the provider"
+          } first so you don't book twice.`,
+          confirmLabel: "Try again",
+          cancelLabel: "Not now",
+          destructive: false,
+        });
       } else if (action === "delete") {
         setConfirm({
           task,
@@ -197,7 +213,7 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
         execute(task, action);
       }
     },
-    [execute, slotById],
+    [data.providers, execute, slotById],
   );
 
   const value = useMemo<TaskActionsValue>(
