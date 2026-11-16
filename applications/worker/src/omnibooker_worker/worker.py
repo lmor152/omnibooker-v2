@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from omnibooker_backend import models
 from omnibooker_backend.database import SessionLocal
+from omnibooker_backend.services import confirmation
 from omnibooker_backend.services.actions import process_due_actions
 from omnibooker_backend.services.executor import (
     BookingExecutionError,
@@ -138,3 +139,4 @@ def _mark_failed(db: Session, task: models.BookingTask, message: str) -> None:
     task.error_message = message
     db.add(task)
     db.commit()
+    confirmation.on_booking_failure(db, task)

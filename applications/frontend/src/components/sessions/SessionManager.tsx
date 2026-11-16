@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CalendarSync, ChevronDown, Edit2, Plus, RefreshCw, Trash2 } from "lucide-react";
-import type { BookingSlot, BookingSlotInput, ChatDestination, Provider, UserPreferences } from "../../types";
+import type { BookingSlot, BookingSlotInput, BookingTask, ChatDestination, Provider, UserPreferences } from "../../types";
+import { deviceTimezone, formatMoment, formatRelative, toTime } from "../../lib/datetime";
 import { ActionMenu } from "../common/ActionMenu";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PageHeader } from "../common/PageHeader";
@@ -11,6 +12,8 @@ import { SessionModal } from "./SessionModal";
 
 interface SessionManagerProps {
   bookingSlots: BookingSlot[];
+  /** Used to show each session's next date and latest result. */
+  bookingTasks?: BookingTask[];
   providers: Provider[];
   destinations: ChatDestination[];
   preferences: UserPreferences | null;
@@ -22,10 +25,15 @@ interface SessionManagerProps {
     providerId: number;
     providerOptions: Record<string, unknown>;
   }) => Promise<{ success: boolean; message: string }>;
+  /** Open the editor for this session on arrival (e.g. from a booking's "Edit session"). */
+  initialEditId?: number | null;
+  /** Open the "add session" form on arrival. */
+  initialAdd?: boolean;
 }
 
 export function SessionManager({
   bookingSlots,
+  bookingTasks = [],
   providers,
   destinations,
   preferences,
@@ -34,9 +42,13 @@ export function SessionManager({
   onDeleteSlot,
   onResyncSlot,
   onTestSlot,
+  initialEditId,
+  initialAdd,
 }: SessionManagerProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingSlot, setEditingSlot] = useState<BookingSlot | null>(null);
+  // Opened on arrival from a link; the shell remounts this page per route, so initial state is enough.
+  const initialSlot = initialEditId != null ? bookingSlots.find((s) => s.id === initialEditId) ?? null : null;
+  const [isModalOpen, setIsModalOpen] = useState(Boolean(initialSlot || (initialAdd && providers.length > 0)));
+  const [editingSlot, setEditingSlot] = useState<BookingSlot | null>(initialSlot);
   const [deletingSlot, setDeletingSlot] = useState<BookingSlot | null>(null);
 
   const handleAddSession = () => {
@@ -94,6 +106,7 @@ export function SessionManager({
     <SessionCard
       key={session.id}
       session={session}
+      tasks={bookingTasks.filter((t) => t.bookingSlotId === session.id)}
       provider={providers.find((p) => p.id === session.providerId)}
       onEdit={() => handleEditSession(session)}
       onDelete={() => setDeletingSlot(session)}
@@ -185,6 +198,7 @@ export function SessionManager({
 
 function SessionCard({
   session,
+  tasks,
   provider,
   onEdit,
   onDelete,
@@ -192,6 +206,7 @@ function SessionCard({
   onResync,
 }: {
   session: BookingSlot;
+  tasks: BookingTask[];
   provider?: Provider;
   onEdit: () => void;
   onDelete: () => void;
@@ -281,6 +296,7 @@ function SessionCard({
             <h4 className="font-semibold text-gray-800 truncate">{session.name}</h4>
             <p className="text-sm text-gray-600">{getScheduleText()}</p>
             <p className="text-sm text-gray-500 truncate">{provider?.name || "Unknown provider"}</p>
+            {session.isActive && <SessionStatus tasks={tasks} />}
           </div>
         </button>
         <ActionMenu
@@ -324,6 +340,45 @@ function SessionCard({
           <dt className="text-gray-500">Timezone</dt>
           <dd className="text-gray-800">{session.timezone}</dd>
         </dl>
+      )}
+    </div>
+  );
+}
+
+/** "Next: Sat 22 Nov, 09:00 · books in 3 days" plus the latest result, so you can tell it's working. */
+function SessionStatus({ tasks }: { tasks: BookingTask[] }) {
+  const now = Date.now();
+  const tz = deviceTimezone();
+  const next = tasks
+    .filter((t) => t.status === "pending" && toTime(t.scheduledDate) > now)
+    .sort((a, b) => toTime(a.scheduledDate) - toTime(b.scheduledDate))[0];
+  const last = tasks
+    .filter((t) => (t.status === "success" || t.status === "failed") && t.attemptedAt)
+    .sort((a, b) => toTime(b.attemptedAt!) - toTime(a.attemptedAt!))[0];
+
+  if (!next && !last) return null;
+  const lastLabel = !last
+    ? null
+    : last.status === "failed"
+      ? { text: "Last attempt failed", className: "bg-red-100 text-red-800" }
+      : last.confirmationStatus === "awaiting"
+        ? { text: "Needs confirming", className: "bg-amber-100 text-amber-900" }
+        : last.confirmationStatus === "cancelled"
+          ? { text: "Last booking cancelled", className: "bg-gray-100 text-gray-600" }
+          : { text: "Last attempt booked", className: "bg-green-100 text-green-800" };
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      {next && (
+        <span className="text-gray-700">
+          Next: {formatMoment(next.scheduledDate, tz)}
+          {next.attemptAt && toTime(next.attemptAt) > now && (
+            <span className="text-gray-500"> · books {formatRelative(next.attemptAt, now)}</span>
+          )}
+        </span>
+      )}
+      {lastLabel && (
+        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", lastLabel.className)}>{lastLabel.text}</span>
       )}
     </div>
   );

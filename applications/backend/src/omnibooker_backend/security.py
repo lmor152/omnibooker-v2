@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from functools import lru_cache
+import logging
 from threading import RLock
 from time import monotonic
 from typing import Any, Iterable, Optional, cast
@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from . import models
 from .config import get_settings
 from .database import get_db
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -56,18 +58,40 @@ def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.email == email).first()
 
 
-@lru_cache
-def get_auth0_jwks() -> dict[str, Any]:
+JWKS_MAX_AGE_SECONDS = 60 * 60
+# An unknown key id triggers at most one refetch per this many seconds, so bogus tokens
+# can't make us hammer Auth0.
+JWKS_MIN_REFETCH_SECONDS = 60
+_jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
+_jwks_lock = RLock()
+
+
+def get_auth0_jwks(*, force: bool = False) -> dict[str, Any]:
+    """Auth0's signing keys, cached for an hour so key rotations are picked up."""
+
     if not settings.auth0_domain:
         raise RuntimeError("Auth0 domain is not configured")
-    url = f"https://{settings.auth0_domain}/.well-known/jwks.json"
-    try:
-        with urlopen(url, timeout=10) as response:  # type: ignore[call-arg]
-            return json.load(response)
-    except URLError as exc:
-        raise HTTPException(
-            status_code=500, detail="Unable to download Auth0 JWKS"
-        ) from exc
+    with _jwks_lock:
+        age = monotonic() - _jwks_cache["fetched_at"]
+        cached = _jwks_cache["keys"]
+        if cached is not None and age < JWKS_MAX_AGE_SECONDS and not (force and age >= JWKS_MIN_REFETCH_SECONDS):
+            return cached
+        url = f"https://{settings.auth0_domain}/.well-known/jwks.json"
+        try:
+            with urlopen(url, timeout=10) as response:  # type: ignore[call-arg]
+                keys = json.load(response)
+        except URLError as exc:
+            if cached is not None:
+                return cached
+            raise HTTPException(
+                status_code=500, detail="Unable to download Auth0 JWKS"
+            ) from exc
+        _jwks_cache.update(keys=keys, fetched_at=monotonic())
+        return keys
+
+
+def _find_key(jwks: dict[str, Any], kid: Any) -> Optional[dict[str, Any]]:
+    return next((key for key in jwks.get("keys", []) if key.get("kid") == kid), None)
 
 
 def fetch_email_from_auth0(token: str, sub: str) -> str:
@@ -169,15 +193,11 @@ def decode_auth0_token(
     except JWTError as exc:
         raise credentials_exception from exc
 
-    jwks = get_auth0_jwks()
-    rsa_key = next(
-        (
-            key
-            for key in jwks.get("keys", [])
-            if key.get("kid") == unverified_header.get("kid")
-        ),
-        None,
-    )
+    kid = unverified_header.get("kid")
+    rsa_key = _find_key(get_auth0_jwks(), kid)
+    if not rsa_key:
+        # Auth0 may have rotated its keys since we cached them.
+        rsa_key = _find_key(get_auth0_jwks(force=True), kid)
     if not rsa_key:
         raise credentials_exception
 
@@ -195,9 +215,10 @@ def decode_auth0_token(
     try:
         payload = jwt.decode(token, rsa_key, **decode_kwargs)
     except JWTError as exc:
+        logger.info("Rejected token: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid Auth0 token: {exc}",
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 

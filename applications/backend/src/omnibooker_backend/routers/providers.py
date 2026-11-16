@@ -26,6 +26,8 @@ async def create_provider(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
+    if not provider_in.credentials.password:
+        raise HTTPException(status_code=422, detail="A password is required")
     return crud.create_provider(db, user_id=current_user.id, provider_in=provider_in)
 
 
@@ -47,10 +49,19 @@ async def update_provider(
 @router.post("/test", response_model=schemas.ProviderTestResult)
 async def test_provider_credentials(
     test_in: schemas.ProviderTestRequest,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
     username = test_in.credentials.username
     password = test_in.credentials.password
+    if not password and test_in.provider_id is not None:
+        # Editing without retyping the password: test with the stored one.
+        stored = crud.get_provider(db, user_id=current_user.id, provider_id=test_in.provider_id)
+        if not stored:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+        password = (stored.credentials or {}).get("password") or ""
+    if not username or not password:
+        raise HTTPException(status_code=422, detail="Username and password are required")
 
     if test_in.type == "Better":
         try:

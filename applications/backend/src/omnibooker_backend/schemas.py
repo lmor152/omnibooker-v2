@@ -62,23 +62,79 @@ class ProviderCreate(ProviderBase):
     pass
 
 
+class ProviderCredentialsUpdate(BaseModel):
+    """Changes to stored credentials. Secrets left out (or blank) keep their stored value,
+    so the client never needs to have them."""
+
+    username: Optional[str] = None
+    password: Optional[str] = None
+    additionalInfo: Optional[str] = None
+    cardDetails: Optional[PaymentCardDetails] = None
+    cardCvc: Optional[str] = Field(None, max_length=4)
+    # Explicitly forget the stored card / security code.
+    removeCard: bool = False
+
+
 class ProviderUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[str] = None
-    credentials: Optional[ProviderCredentials] = None
+    credentials: Optional[ProviderCredentialsUpdate] = None
 
 
-class ProviderRead(ProviderBase):
+class StoredCardSummary(BaseModel):
+    last4: str
+    expiryDate: str
+
+
+class ProviderCredentialsSummary(BaseModel):
+    """What the API shows about stored credentials: never the password, card number or CVC."""
+
+    username: str
+    additionalInfo: Optional[str] = None
+    hasPassword: bool
+    card: Optional[StoredCardSummary] = None
+    hasCardCvc: bool = False
+
+    @classmethod
+    def from_stored(cls, credentials: dict | None) -> "ProviderCredentialsSummary":
+        credentials = credentials or {}
+        card = credentials.get("cardDetails") or None
+        return cls(
+            username=credentials.get("username") or "",
+            additionalInfo=credentials.get("additionalInfo"),
+            hasPassword=bool(credentials.get("password")),
+            card=(
+                StoredCardSummary(last4=str(card.get("cardNumber", ""))[-4:], expiryDate=card.get("expiryDate", ""))
+                if card and card.get("cardNumber")
+                else None
+            ),
+            hasCardCvc=bool(credentials.get("cardCvc")),
+        )
+
+
+class ProviderRead(BaseModel):
     id: int
     user_id: int
+    name: str
+    type: str
+    credentials: ProviderCredentialsSummary
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("credentials", mode="before")
+    @classmethod
+    def summarise_credentials(cls, value):
+        if isinstance(value, ProviderCredentialsSummary):
+            return value
+        return ProviderCredentialsSummary.from_stored(value)
 
 
 class ProviderTestRequest(BaseModel):
     type: str
     credentials: ProviderCredentials
+    # When editing, test with the stored password if none was typed.
+    provider_id: Optional[int] = None
 
 
 class ProviderTestResult(BaseModel):
@@ -266,3 +322,40 @@ class ChatDestinationRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PushConfigRead(BaseModel):
+    """The VAPID public key browsers subscribe with; null when push isn't set up on the server."""
+
+    public_key: Optional[str] = None
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str = Field(min_length=1, max_length=255)
+    auth: str = Field(min_length=1, max_length=255)
+
+
+class PushSubscriptionCreate(BaseModel):
+    """The browser's PushSubscription.toJSON(), plus a label for the device list."""
+
+    endpoint: str = Field(min_length=1, max_length=1024)
+    keys: PushSubscriptionKeys
+    user_agent: Optional[str] = Field(default=None, max_length=255)
+
+
+class PushSubscriptionRemove(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=1024)
+
+
+class PushSubscriptionRead(BaseModel):
+    id: int
+    endpoint: str
+    user_agent: Optional[str] = None
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PushTestResult(BaseModel):
+    sent: int

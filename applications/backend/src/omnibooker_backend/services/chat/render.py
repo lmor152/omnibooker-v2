@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from ... import models
 from ..scheduler import _slot_timezone
+from ..push import PushMessage
 from .base import Button, ButtonStyle, OutgoingMessage
 
 Status = models.ConfirmationStatusEnum
@@ -65,6 +66,61 @@ def cancel_result_message(task: models.BookingTask) -> OutgoingMessage:
         f"⚠️ Cancelling {what} may have failed: {task.cancel_message}.\n"
         f"Check your bookings in {_provider_name(task)}."
     )
+
+
+def failure_message(task: models.BookingTask) -> OutgoingMessage:
+    slot = task.booking_slot
+    start = _utc(task.scheduled_date).astimezone(_slot_timezone(slot))
+    reason = (task.error_message or "the provider didn't say why").strip().rstrip(".")
+    return OutgoingMessage(
+        f"⚠️ Couldn't book **{slot.name}** for {start:%a %-d %b %H:%M}: {reason}.\n"
+        "You can retry it from the Bookings page in the app."
+    )
+
+
+def push_message(task: models.BookingTask, purpose: str, *, now: datetime | None = None) -> PushMessage:
+    """Plain-text phone notification for the same events as the chat messages.
+
+    Tapping it opens the booking in the app, where Keep and Cancel are one tap away.
+    """
+
+    slot = task.booking_slot
+    url = f"/#/bookings/{task.id}"
+    tag = f"booking-{task.id}"
+    status = task.confirmation_status
+
+    if purpose == "failed":
+        start = _utc(task.scheduled_date).astimezone(_slot_timezone(slot))
+        reason = (task.error_message or "the provider didn't say why").strip().rstrip(".")
+        return PushMessage(f"Couldn't book {slot.name}", f"{start:%a %-d %b %H:%M}: {reason}. Tap to retry.", url, tag)
+    if purpose == "reminder":
+        now = now or datetime.now(timezone.utc)
+        left = _duration(_utc(task.confirm_deadline_at) - now) if task.confirm_deadline_at else "soon"
+        return PushMessage(
+            f"Keep {slot.name}?",
+            f"{describe(task)}. Cancelled at {_when(task, task.confirm_deadline_at)} ({left} left) unless you keep it.",
+            url,
+            tag,
+        )
+    if purpose == "cancel_result":
+        if status == Status.cancelled:
+            return PushMessage(f"Cancelled {slot.name}", f"{describe(task)}. {task.cancel_message or ''}".strip(), url, tag)
+        return PushMessage(
+            f"Check {slot.name}",
+            f"Couldn't cancel automatically: {task.cancel_message or 'unknown error'}. "
+            f"Cancel it in {_provider_name(task)} if you don't need it.",
+            url,
+            tag,
+        )
+    # "booking"
+    if status == Status.awaiting:
+        return PushMessage(
+            f"Booked {slot.name}. Keep it?",
+            f"{describe(task)}. Confirm by {_when(task, task.confirm_deadline_at)} or it will be cancelled.",
+            url,
+            tag,
+        )
+    return PushMessage(f"Booked {slot.name}", describe(task), url, tag)
 
 
 def status_line(task: models.BookingTask) -> str:

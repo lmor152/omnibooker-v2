@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .config import get_settings
-from .routers import auth, booking_slots, booking_tasks, chat, me, providers
+from .routers import auth, booking_slots, booking_tasks, chat, me, providers, push
 
 
 def _health_check() -> dict[str, str]:
@@ -14,7 +14,15 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     # The schema is managed by Alembic: run `python -m omnibooker_backend.migrate`.
-    app = FastAPI(title=settings.app_name, version=__version__)
+    # Interactive API docs only when asked for (local development); they map out the API for anyone.
+    docs = settings.enable_api_docs
+    app = FastAPI(
+        title=settings.app_name,
+        version=__version__,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -32,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(booking_tasks.router, prefix=settings.api_prefix)
     app.include_router(me.router, prefix=settings.api_prefix)
     app.include_router(chat.router, prefix=settings.api_prefix)
+    app.include_router(push.router, prefix=settings.api_prefix)
 
     return app
 

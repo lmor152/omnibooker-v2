@@ -326,7 +326,7 @@ def test_without_destination_messages_are_skipped(db_session: Session) -> None:
 
     (action,) = _actions(db_session, task)[:1]
     assert action.status == models.ActionStatusEnum.skipped
-    assert action.last_error == "no chat destination"
+    assert action.last_error == "no chat destination or push subscription"
 
 
 def test_failed_send_is_retried_with_backoff(db_session: Session) -> None:
@@ -388,3 +388,69 @@ def test_cancel_handlers_are_registered_wherever_confirmation_is_used() -> None:
         "booking_engine._cancel_registry"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+# --- failed attempts ---------------------------------------------------------------
+
+
+def _failed(db: Session, **kwargs) -> models.BookingTask:
+    task = _booking(db, **kwargs)
+    task.status = models.TaskStatusEnum.failed
+    task.error_message = "No courts available."
+    db.commit()
+    return task
+
+
+def test_failed_attempt_posts_a_message(db_session: Session) -> None:
+    task = _failed(db_session)
+    confirmation.on_booking_failure(db_session, task, now=NOW)
+    chat = FakeChat()
+
+    _run_due(db_session, chat, NOW)
+
+    channel, message = chat.sent[0]
+    assert channel == "c1"
+    assert "Couldn't book **Sunday Tennis**" in message.content
+    assert "No courts available." in message.content
+    assert not message.buttons
+    posted = db_session.query(models.ChatMessage).filter_by(booking_task_id=task.id).one()
+    assert posted.purpose == "failed"
+
+
+def test_failed_attempt_respects_notification_settings(db_session: Session) -> None:
+    muted = _failed(db_session)
+    muted.booking_slot.notifications_enabled = False
+    db_session.commit()
+    nowhere = _failed(db_session, with_destination=False)
+
+    confirmation.on_booking_failure(db_session, muted, now=NOW)
+    confirmation.on_booking_failure(db_session, nowhere, now=NOW)
+
+    assert _actions(db_session, muted) == []
+    assert _actions(db_session, nowhere) == []
+
+
+def test_failure_message_is_skipped_once_retried(db_session: Session) -> None:
+    task = _failed(db_session)
+    confirmation.on_booking_failure(db_session, task, now=NOW)
+    task.status = models.TaskStatusEnum.pending
+    db_session.commit()
+    chat = FakeChat()
+
+    _run_due(db_session, chat, NOW)
+
+    assert chat.sent == []
+    assert [a.status for a in _actions(db_session, task)] == [models.ActionStatusEnum.skipped]
+
+
+def test_anyone_policy_lets_linked_users_keep_but_not_cancel(db_session: Session) -> None:
+    task = _booking(db_session)
+    task.booking_slot.confirmation_policy = models.ConfirmationPolicyEnum.anyone
+    db_session.commit()
+    friend = confirmation.Actor(label="discord:99", user_id=task.booking_slot.user_id + 10_000)
+    stranger = confirmation.Actor(label="discord:98", user_id=None)
+
+    assert confirmation.can_actor_decide(task, friend)
+    assert not confirmation.can_actor_decide(task, friend, cancelling=True)
+    assert not confirmation.can_actor_decide(task, stranger)
+    assert confirmation.can_actor_decide(task, _owner(task), cancelling=True)

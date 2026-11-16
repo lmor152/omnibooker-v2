@@ -1,0 +1,5 @@
+# Build settings come from Docker build args, never from local .env files.
+.env
+.env.*
+node_modules
+build

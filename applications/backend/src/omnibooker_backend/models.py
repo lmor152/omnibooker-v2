@@ -1,6 +1,6 @@
 import enum
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from decimal import Decimal
 
@@ -20,6 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .crypto import EncryptedJSON
 from .database import Base
 
 
@@ -109,7 +110,8 @@ class Provider(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Other")
-    credentials: Mapped[dict[str, Optional[str]]] = mapped_column(JSON, default=dict)
+    # Passwords and card details: Fernet-encrypted at rest (OMNIBOOKER_ENCRYPTION_KEY).
+    credentials: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -342,3 +344,22 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class PushSubscription(Base):
+    """A browser/device that receives Web Push notifications (e.g. the home-screen app on a phone)."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    endpoint: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

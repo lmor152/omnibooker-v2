@@ -8,6 +8,17 @@ import { fetchCurrentUser } from "./lib/api";
 const auth0Audience = import.meta.env.VITE_AUTH0_AUDIENCE;
 const auth0ScopeParam = buildAuth0ScopeParam(import.meta.env.VITE_AUTH0_SCOPE);
 
+const USER_CACHE_KEY = "omnibooker:user";
+
+function readCachedUser(): User | null {
+  try {
+    const raw = window.localStorage.getItem(USER_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildAuth0ScopeParam(value?: string) {
   if (!value) return "openid profile email";
   return value
@@ -27,7 +38,17 @@ export default function App() {
     logout,
   } = useAuth0();
 
-  const [user, setUser] = useState<User | null>(null);
+  // The last profile is cached so a home-screen relaunch can show cached bookings straight away.
+  const [user, setUserState] = useState<User | null>(readCachedUser);
+  const setUser = useCallback((next: User | null) => {
+    setUserState(next);
+    try {
+      if (next) window.localStorage.setItem(USER_CACHE_KEY, JSON.stringify(next));
+      else window.localStorage.removeItem(USER_CACHE_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
@@ -68,7 +89,7 @@ export default function App() {
     let canceled = false;
 
     if (!isAuthenticated) {
-      setUser(null);
+      if (!authLoading) setUser(null);
       setUserLoading(false);
       setUserError(null);
       return () => {
@@ -100,7 +121,7 @@ export default function App() {
     return () => {
       canceled = true;
     };
-  }, [isAuthenticated, getApiToken]);
+  }, [isAuthenticated, authLoading, getApiToken, setUser]);
 
   const handleLogout = () => {
     logout({ logoutParams: { returnTo: window.location.origin } });
@@ -151,7 +172,7 @@ export default function App() {
     );
   }
 
-  if (userLoading) {
+  if (userLoading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white to-green-50/30">
         <div className="text-center">
@@ -162,7 +183,7 @@ export default function App() {
     );
   }
 
-  if (userError) {
+  if (userError && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white to-red-50/30">
         <div className="text-center max-w-md mx-auto px-4">
@@ -212,6 +233,7 @@ export default function App() {
     <Dashboard
       isAuthenticated={signedIn}
       userName={displayName}
+      userKey={user ? String(user.id) : undefined}
       getAccessToken={getApiToken}
       onLogin={handleLogin}
       onLogout={handleLogout}

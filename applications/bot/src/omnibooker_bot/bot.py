@@ -61,7 +61,7 @@ def _describe_for_cancel(db, task_id: int, discord_user: discord.abc.User) -> st
     """Prompt text for the cancel confirmation, or None if this user may not cancel."""
 
     task = db.get(models.BookingTask, task_id)
-    if task is None or not confirmation.can_actor_decide(task, _actor(db, discord_user)):
+    if task is None or not confirmation.can_actor_decide(task, _actor(db, discord_user), cancelling=True):
         return None
     refund = ""
     if task.refund_deadline_at:

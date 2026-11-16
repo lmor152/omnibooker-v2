@@ -1,0 +1,13 @@
+# Keep local secrets and build junk out of images (the backend image builds from the repo root).
+**/.env
+**/.env.*
+**/*.db
+**/*.sqlite
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+.git
+applications/frontend
+notebook.ipynb
+test-results

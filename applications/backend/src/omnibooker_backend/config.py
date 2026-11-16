@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Omnibooker API"
+    # Serve /docs and /openapi.json. Off by default so production doesn't publish them.
+    enable_api_docs: bool = False
     api_prefix: str = "/api"
     backend_cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     database_url: str = "sqlite:///./omnibooker.db"
@@ -56,6 +58,11 @@ class Settings(BaseSettings):
     assistant_model: str = "claude-sonnet-5-5"
     # Used for links in chat messages.
     frontend_url: str | None = None
+    # Web Push (VAPID). Generate with: python -m omnibooker_backend.services.push generate-keys
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    # Contact for push services, e.g. "mailto:you@example.com" or an https URL.
+    vapid_subject: str | None = None
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -61,13 +62,35 @@ def create_provider(
 def update_provider(
     db: Session, provider: models.Provider, provider_in: schemas.ProviderUpdate
 ) -> models.Provider:
-    for field, value in provider_in.model_dump(exclude_unset=True).items():
-        if hasattr(value, "model_dump"):
-            value = value.model_dump()
-        setattr(provider, field, value)
+    if provider_in.name is not None:
+        provider.name = provider_in.name
+    if provider_in.type is not None:
+        provider.type = provider_in.type
+    if provider_in.credentials is not None:
+        provider.credentials = merge_credentials(provider.credentials or {}, provider_in.credentials)
     db.commit()
     db.refresh(provider)
     return provider
+
+
+def merge_credentials(stored: dict, update: schemas.ProviderCredentialsUpdate) -> dict:
+    """Apply an edit to stored credentials. Blank or missing secrets keep the stored value."""
+
+    merged = dict(stored)
+    if update.username is not None:
+        merged["username"] = update.username
+    if update.additionalInfo is not None:
+        merged["additionalInfo"] = update.additionalInfo or None
+    if update.password:
+        merged["password"] = update.password
+    if update.removeCard:
+        merged["cardDetails"] = None
+        merged["cardCvc"] = None
+    if update.cardDetails is not None:
+        merged["cardDetails"] = update.cardDetails.model_dump()
+    if update.cardCvc:
+        merged["cardCvc"] = update.cardCvc
+    return merged
 
 
 def delete_provider(db: Session, provider: models.Provider) -> None:
@@ -175,14 +198,32 @@ def cancel_pending_tasks_for_slot(db: Session, slot: models.BookingSlot) -> int:
 # Booking task helpers
 
 
-def get_booking_tasks(db: Session, *, user_id: int) -> list[models.BookingTask]:
-    return (
+def get_booking_tasks(
+    db: Session,
+    *,
+    user_id: int,
+    scheduled_from: Optional[datetime] = None,
+    scheduled_to: Optional[datetime] = None,
+    statuses: Optional[list[models.TaskStatusEnum]] = None,
+    slot_id: Optional[int] = None,
+) -> list[models.BookingTask]:
+    """The user's tasks, oldest first, optionally limited to a scheduled_date range
+    (from inclusive, to exclusive), a set of statuses and one session."""
+
+    query = (
         db.query(models.BookingTask)
         .join(models.BookingSlot)
         .filter(models.BookingSlot.user_id == user_id)
-        .order_by(models.BookingTask.scheduled_date.asc())
-        .all()
     )
+    if scheduled_from is not None:
+        query = query.filter(models.BookingTask.scheduled_date >= scheduled_from)
+    if scheduled_to is not None:
+        query = query.filter(models.BookingTask.scheduled_date < scheduled_to)
+    if statuses:
+        query = query.filter(models.BookingTask.status.in_(statuses))
+    if slot_id is not None:
+        query = query.filter(models.BookingTask.booking_slot_id == slot_id)
+    return query.order_by(models.BookingTask.scheduled_date.asc()).all()
 
 
 def get_booking_task(

@@ -21,6 +21,11 @@ COPY applications/bot /app/applications/bot
 RUN pip install --no-cache-dir -e ./applications/backend -e ./applications/worker -e ./applications/bot
 
 ENV PYTHONPATH="/app/applications/backend/src:/app/applications/worker/src:/app/applications/bot/src:${PYTHONPATH}"
+
+# Run as an unprivileged user.
+RUN useradd --system --uid 10001 --no-create-home app
+USER app
+
 EXPOSE 8000
 
 CMD ["uvicorn", "omnibooker_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

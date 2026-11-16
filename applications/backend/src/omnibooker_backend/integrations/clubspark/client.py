@@ -193,7 +193,7 @@ class ClubsparkClient(AbstractContextManager["ClubsparkClient"]):
             "grant_type": "password",
             "username": self._username,
         }
-        logger.info("Requesting Clubspark auth token for user=%s", self._username)
+        logger.debug("Requesting Clubspark auth token")
         response = self._http.post(self.TOKEN_URL, json=payload, headers=headers)
         try:
             response.raise_for_status()
@@ -201,13 +201,13 @@ class ClubsparkClient(AbstractContextManager["ClubsparkClient"]):
             logger.error(
                 "Clubspark token request failed (status=%s body=%s)",
                 exc.response.status_code if exc.response else "?",
-                exc.response.text if exc.response else "<no body>",
+                exc.response.text[:300] if exc.response else "<no body>",
             )
             raise ClubsparkAPIError("Unable to authenticate with ClubSpark") from exc
         token = response.json().get("access_token")
         if not token:
             logger.error(
-                "Clubspark token response missing access_token: %s", response.text
+                "Clubspark token response missing access_token (status=%s)", response.status_code
             )
             raise ClubsparkAPIError("ClubSpark token response missing access_token")
         return token

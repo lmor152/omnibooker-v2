@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from typing import Any
 
@@ -37,6 +38,31 @@ def decrypt_str(token: str) -> str:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken as exc:
         raise ValueError("Unable to decrypt value; wrong encryption key?") from exc
+
+
+def is_encrypted(value: str) -> bool:
+    """Fernet tokens are url-safe base64 of a version byte 0x80, so they start with "gAAAAA"."""
+
+    return value.startswith("gAAAAA")
+
+
+class EncryptedJSON(TypeDecorator[Any]):
+    """A JSON value stored Fernet-encrypted (e.g. provider passwords and card details).
+
+    Reads tolerate legacy plaintext JSON so a half-migrated row never becomes unreadable;
+    every write is encrypted.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Any) -> str | None:
+        return encrypt_str(json.dumps(value)) if value is not None else None
+
+    def process_result_value(self, value: str | None, dialect: Any) -> Any:
+        if value is None:
+            return None
+        return json.loads(decrypt_str(value) if is_encrypted(value) else value)
 
 
 class EncryptedString(TypeDecorator[str]):

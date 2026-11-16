@@ -287,7 +287,7 @@ class BetterClient(AbstractContextManager["BetterClient"]):
             logger.error(
                 "Better login failed status=%s body=%s",
                 exc.response.status_code if exc.response else "?",
-                exc.response.text if exc.response else "<no body>",
+                exc.response.text[:300] if exc.response else "<no body>",
             )
             raise BetterAPIError("Unable to authenticate with Better") from exc
         login = LoginResponse.model_validate(response.json())

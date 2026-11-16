@@ -17,6 +17,7 @@ interface ProviderModalProps {
   onTest: (payload: {
     type: string;
     credentials: { username: string; password: string };
+    providerId?: number;
   }) => Promise<{ success: boolean; message: string }>;
 }
 
@@ -52,6 +53,10 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
   const [error, setError] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testMessage, setTestMessage] = useState<string>("");
+  // Saved secrets never come back from the server; blank fields keep them.
+  const stored = provider?.credentials;
+  const [replaceCard, setReplaceCard] = useState(false);
+  const editingCard = !stored?.card || replaceCard;
 
   useEffect(() => {
     if (provider) {
@@ -60,16 +65,10 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
         type: provider.type,
         credentials: {
           username: provider.credentials.username,
-          password: provider.credentials.password,
+          password: "",
           additionalInfo: provider.credentials.additionalInfo ?? "",
-          cardDetails: provider.credentials.cardDetails
-            ? {
-                cardNumber: provider.credentials.cardDetails.cardNumber,
-                expiryDate: provider.credentials.cardDetails.expiryDate,
-                cvc: provider.credentials.cardDetails.cvc,
-              }
-            : undefined,
-          cardCvc: provider.credentials.cardCvc ?? "",
+          cardDetails: undefined,
+          cardCvc: "",
         },
       });
     } else {
@@ -88,7 +87,7 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.credentials.username || !form.credentials.password) return;
+    if (!form.name || !form.credentials.username || (!provider && !form.credentials.password)) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -97,7 +96,7 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
         ...form,
         credentials: {
           ...form.credentials,
-          additionalInfo: form.credentials.additionalInfo || undefined,
+          additionalInfo: form.credentials.additionalInfo ?? undefined,
           cardDetails:
             form.credentials.cardDetails &&
             form.credentials.cardDetails.cardNumber &&
@@ -129,6 +128,8 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
           username: form.credentials.username,
           password: form.credentials.password,
         },
+        // Blank password while editing: the server tests with the saved one.
+        providerId: provider?.id,
       });
       if (result.success) {
         setTestStatus("success");
@@ -206,7 +207,7 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
               variant="outline"
               size="lg"
               onClick={handleTest}
-              disabled={testStatus === "loading" || !form.credentials.username || !form.credentials.password}
+              disabled={testStatus === "loading" || !form.credentials.username || (!form.credentials.password && !stored?.hasPassword)}
             >
               {testStatus === "loading" ? (
                 <>
@@ -267,15 +268,20 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
             />
           </Field>
 
-          <Field label="Password" htmlFor="provider-password" required>
+          <Field
+            label="Password"
+            htmlFor="provider-password"
+            required={!stored?.hasPassword}
+            hint={stored?.hasPassword ? "Saved. Leave blank to keep it." : undefined}
+          >
             <Input
               id="provider-password"
               type="password"
-              autoComplete="current-password"
+              autoComplete={stored ? "new-password" : "current-password"}
               value={form.credentials.password}
               onChange={(e) => setCredentials({ password: e.target.value })}
-              placeholder="••••••••"
-              required
+              placeholder={stored?.hasPassword ? "Unchanged" : "••••••••"}
+              required={!stored?.hasPassword}
             />
           </Field>
 
@@ -296,7 +302,12 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
             title="Stored card"
             description="Better only needs the security code for the card saved in your account, to re-verify it at booking time."
           >
-            <Field label="Card security code (CVC)" htmlFor="provider-card-cvc" required>
+            <Field
+              label="Card security code (CVC)"
+              htmlFor="provider-card-cvc"
+              required={!stored?.hasCardCvc}
+              hint={stored?.hasCardCvc ? "Saved. Leave blank to keep it." : undefined}
+            >
               <Input
                 id="provider-card-cvc"
                 type="password"
@@ -304,10 +315,10 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
                 autoComplete="cc-csc"
                 value={form.credentials.cardCvc ?? ""}
                 onChange={(e) => setCredentials({ cardCvc: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                placeholder="123"
+                placeholder={stored?.hasCardCvc ? "•••" : "123"}
                 maxLength={4}
                 className="max-w-[8rem]"
-                required
+                required={!stored?.hasCardCvc}
               />
             </Field>
           </FormSection>
@@ -321,6 +332,18 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
               <p className="text-sm text-amber-800">Use a virtual card with a spending limit for this provider.</p>
             </div>
 
+            {stored?.card && !replaceCard ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 p-3 text-sm">
+                <span className="text-gray-800">
+                  Card ending <strong>{stored.card.last4}</strong>, expires {stored.card.expiryDate}
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setReplaceCard(true)}>
+                  Replace card
+                </Button>
+              </div>
+            ) : null}
+            {editingCard && (
+            <>
             <Field label="Card number" htmlFor="provider-card-number" required>
               <Input
                 id="provider-card-number"
@@ -370,6 +393,8 @@ export function ProviderModal({ provider, onSave, onClose, onTest }: ProviderMod
                 />
               </Field>
             </div>
+            </>
+            )}
           </FormSection>
         )}
 

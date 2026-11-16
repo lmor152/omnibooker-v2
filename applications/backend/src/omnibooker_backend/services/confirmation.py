@@ -161,6 +161,31 @@ def on_booking_success(
     db.commit()
 
 
+def on_booking_failure(
+    db: Session, task: models.BookingTask, *, now: datetime | None = None
+) -> None:
+    """Queue a "couldn't book" message for a failed attempt, if the owner gets
+    notifications. Never raises: a failed alert must not hide the failed booking."""
+
+    try:
+        slot = task.booking_slot
+        if slot is None:
+            return
+        settings = effective_settings(db, slot)
+        has_push = (
+            db.query(models.PushSubscription.id).filter_by(user_id=slot.user_id).first() is not None
+        )
+        if not settings.notifications_enabled or (settings.destination is None and not has_push):
+            db.commit()  # effective_settings may have created the preferences row
+            return
+        now = _utc(now) if now else datetime.now(timezone.utc)
+        enqueue(db, task, "notify_failed", now)
+        db.commit()
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("Could not queue failure notification for task %s", task.id)
+        db.rollback()
+
+
 def _refund_deadline(task: models.BookingTask) -> datetime | None:
     raw = (task.provider_booking_ref or {}).get("refund_deadline_utc")
     if not raw:
@@ -175,14 +200,20 @@ def _refund_deadline(task: models.BookingTask) -> datetime | None:
 # --- decisions ----------------------------------------------------------------
 
 
-def can_actor_decide(task: models.BookingTask, actor: Actor) -> bool:
+def can_actor_decide(task: models.BookingTask, actor: Actor, *, cancelling: bool = False) -> bool:
+    """Whether `actor` may keep (or, with `cancelling`, cancel) this booking.
+
+    The "anyone" policy lets any linked account *keep* a booking, but only the owner (or the
+    system's deadline) can cancel one: cancelling gives the court up and can't be undone.
+    """
+
     if actor.is_system:
         return True
-    policy = task.booking_slot.confirmation_policy
-    if policy == models.ConfirmationPolicyEnum.anyone:
+    is_owner = actor.user_id is not None and actor.user_id == task.booking_slot.user_id
+    if is_owner:
         return True
-    # owner_only (and quorum, until it is implemented)
-    return actor.user_id is not None and actor.user_id == task.booking_slot.user_id
+    policy = task.booking_slot.confirmation_policy
+    return policy == models.ConfirmationPolicyEnum.anyone and not cancelling and actor.user_id is not None
 
 
 def confirm(
@@ -219,7 +250,7 @@ def request_cancel(
 
     now = _utc(now) if now else datetime.now(timezone.utc)
     task = _lock_task(db, task_id)
-    if not can_actor_decide(task, actor):
+    if not can_actor_decide(task, actor, cancelling=True):
         db.rollback()
         raise PermissionError("Only the booking's owner can cancel it")
     if task.status != models.TaskStatusEnum.success or task.confirmation_status not in CANCELLABLE:

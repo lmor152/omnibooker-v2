@@ -105,9 +105,15 @@ function Admonition({
   );
 }
 
-export function GuidesTab() {
+export function GuidesTab({ slug, onSelect }: { slug?: string; onSelect?: (slug: string) => void } = {}) {
   const [search, setSearch] = useState("");
-  const [activeSlug, setActiveSlug] = useState(guides[0]?.slug ?? "");
+  const [activeSlug, setActiveSlugState] = useState(
+    guides.some((guide) => guide.slug === slug) ? slug! : guides[0]?.slug ?? "",
+  );
+  const setActiveSlug = (next: string) => {
+    setActiveSlugState(next);
+    if (next && next !== slug) onSelect?.(next);
+  };
 
   const filteredGuides = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -126,13 +132,13 @@ export function GuidesTab() {
 
   useEffect(() => {
     if (!filteredGuides.length) {
-      setActiveSlug("");
+      setActiveSlugState("");
       return;
     }
 
     const isActiveVisible = filteredGuides.some((guide) => guide.slug === activeSlug);
     if (!isActiveVisible) {
-      setActiveSlug(filteredGuides[0].slug);
+      setActiveSlugState(filteredGuides[0].slug);
     }
   }, [filteredGuides, activeSlug]);
 

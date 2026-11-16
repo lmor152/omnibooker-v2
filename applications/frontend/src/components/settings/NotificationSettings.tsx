@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Bell, Link2, MessageSquare, RefreshCw, Send, Star, Trash2, Unlink, X } from "lucide-react";
+import { Bell, Link2, MessageSquare, Send, Star, Trash2, Unlink, X } from "lucide-react";
 import type { ChatDestination, ChatIdentity, ChatLinkCode, UserPreferences } from "../../types";
 import * as api from "../../lib/api";
 import { ChipsList } from "../ChipsList";
 import { ActionMenu } from "../common/ActionMenu";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Field, ToggleRow } from "../common/Field";
-import { PageHeader } from "../common/PageHeader";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
@@ -38,6 +37,7 @@ export function NotificationSettings({
   const [notice, setNotice] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [removingChannel, setRemovingChannel] = useState<ChatDestination | null>(null);
+  const [unlinking, setUnlinking] = useState<ChatIdentity | null>(null);
 
   const run = useCallback(
     async <T,>(action: (token: string) => Promise<T>): Promise<T | undefined> => {
@@ -80,14 +80,38 @@ export function NotificationSettings({
     return () => window.clearInterval(timer);
   }, [linkCode]);
 
+  // While a link code is live, watch for the link to complete so there's no need to refresh.
+  useEffect(() => {
+    if (!linkCode || !isAuthenticated) return;
+    const linkedBefore = new Set(identities.map((identity) => identity.id));
+    const timer = window.setInterval(async () => {
+      if (Date.parse(linkCode.expiresAt) < Date.now()) {
+        window.clearInterval(timer);
+        return;
+      }
+      try {
+        const token = await getAccessToken();
+        const latest = await api.fetchChatIdentities(token);
+        const added = latest.find((identity) => !linkedBefore.has(identity.id));
+        if (added) {
+          setIdentities(latest);
+          setLinkCode(null);
+          setNotice(`Linked as ${added.externalUsername ?? "your Discord account"}.`);
+          reload().catch(() => null); // channels may have been added too
+        }
+      } catch {
+        // Keep polling; a transient error isn't worth showing.
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+    // identities deliberately excluded: compare against the accounts linked when the code was made.
+  }, [linkCode, isAuthenticated, getAccessToken, reload]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!isAuthenticated) {
     return (
-      <div>
-        <PageHeader title="Notifications" />
-        <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
-          Log in to set up Discord notifications and booking confirmations.
-        </p>
-      </div>
+      <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
+        Log in to set up Discord notifications and booking confirmations.
+      </p>
     );
   }
 
@@ -131,16 +155,6 @@ export function NotificationSettings({
 
   return (
     <div>
-      <PageHeader
-        title="Notifications"
-        description="Get booking updates in Discord and confirm bookings there, or let unconfirmed ones be cancelled for a refund."
-        actions={
-          <Button variant="outline" size="icon" onClick={() => reload()} aria-label="Refresh notification settings">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-        }
-      />
-
       <div className="space-y-4">
         {error && (
           <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 break-words">
@@ -170,7 +184,7 @@ export function NotificationSettings({
                   <span className="min-w-0 truncate">
                     Linked as <strong>{identity.externalUsername ?? "Discord user"}</strong>
                   </span>
-                  <Button variant="ghost" size="sm" onClick={() => handleUnlink(identity)} className="text-gray-600 hover:text-red-600">
+                  <Button variant="ghost" size="sm" onClick={() => setUnlinking(identity)} className="text-gray-600 hover:text-red-600">
                     <Unlink className="w-4 h-4" />
                     Unlink
                   </Button>
@@ -188,8 +202,8 @@ export function NotificationSettings({
                 /bookie link {linkCode.code}
               </p>
               <p className="text-xs text-gray-600">
-                Expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}. Then refresh this
-                page.
+                Expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}. This page updates
+                once you're linked.
               </p>
             </div>
           ) : (
@@ -270,8 +284,8 @@ export function NotificationSettings({
             status={isSaving ? "Saving…" : undefined}
           >
             <ToggleRow
-              label="Post booking updates"
-              description="Send a message when a booking is made, kept or cancelled."
+              label="Send booking updates"
+              description="Notify your phone and Discord when a booking is made, needs confirming, fails or is cancelled."
               htmlFor="pref-notifications"
             >
               <Switch
@@ -376,6 +390,14 @@ export function NotificationSettings({
         }
         confirmLabel="Remove"
         onConfirm={() => removingChannel && handleRemoveChannel(removingChannel)}
+      />
+      <ConfirmDialog
+        open={unlinking !== null}
+        onOpenChange={(open) => !open && setUnlinking(null)}
+        title="Unlink this Discord account?"
+        description="You won't be able to keep or cancel bookings from Discord with it until you link it again."
+        confirmLabel="Unlink"
+        onConfirm={() => unlinking && handleUnlink(unlinking)}
       />
     </div>
   );

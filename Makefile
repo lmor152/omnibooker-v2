@@ -19,6 +19,10 @@ install-node:
 migrate:
 	uv run --project applications/backend -- python -m omnibooker_backend.migrate
 
+# Demo sessions and bookings in a LOCAL database (log in once first). ARGS=--reset to recreate.
+seed-dev:
+	uv run --project applications/backend -- python -m omnibooker_backend.dev_seed $(ARGS)
+
 run-backend: migrate
 	uv run --project applications/backend -- uvicorn omnibooker_backend.main:app
 

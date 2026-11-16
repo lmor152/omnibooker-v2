@@ -22,18 +22,28 @@ export interface User {
   createdAt: string;
 }
 
+/** What the API shows about stored credentials. Passwords and card details never leave the server. */
+export interface ProviderCredentialsSummary {
+  username: string;
+  additionalInfo?: string | null;
+  hasPassword: boolean;
+  card?: { last4: string; expiryDate: string } | null;
+  hasCardCvc: boolean;
+}
+
 export interface Provider {
   id: number;
   name: string;
   type: ProviderType;
-  credentials: ProviderCredentials;
+  credentials: ProviderCredentialsSummary;
   createdAt: string;
 }
 
 export interface ProviderInput {
   name: string;
   type: ProviderType;
-  credentials: ProviderCredentials;
+  /** On update, blank secrets keep their stored value. */
+  credentials: ProviderCredentials & { removeCard?: boolean };
 }
 
 export type BookingFrequency = "weekly" | "fortnightly" | "monthly" | "one_off";

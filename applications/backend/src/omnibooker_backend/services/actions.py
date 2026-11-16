@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..config import get_settings
-from . import confirmation
+from . import confirmation, push
 from .chat import render
 from .chat.base import ChatAdapter, OutgoingMessage, PostedMessage
 from .chat.discord import DiscordClient
@@ -99,14 +99,14 @@ def _run(
 
 def _notify_booked(db, action, chat, now) -> None:
     task = _task(db, action)
-    _post(db, task, render.booking_message(task), chat, purpose="booking")
+    _post(db, action, task, render.booking_message(task), chat, purpose="booking", now=now)
 
 
 def _reminder(db, action, chat, now) -> None:
     task = _task(db, action)
     if task.confirmation_status != Status.awaiting:
         raise _Skip(f"booking is {task.confirmation_status.value}")
-    _post(db, task, render.reminder_message(task, now=now), chat, purpose="reminder")
+    _post(db, action, task, render.reminder_message(task, now=now), chat, purpose="reminder", now=now)
 
 
 def _deadline(db, action, chat, now) -> None:
@@ -121,7 +121,14 @@ def _deadline(db, action, chat, now) -> None:
 
 def _notify_cancel_result(db, action, chat, now) -> None:
     task = _task(db, action)
-    _post(db, task, render.cancel_result_message(task), chat, purpose="cancel_result")
+    _post(db, action, task, render.cancel_result_message(task), chat, purpose="cancel_result", now=now)
+
+
+def _notify_failed(db, action, chat, now) -> None:
+    task = _task(db, action)
+    if task.status != models.TaskStatusEnum.failed:
+        raise _Skip(f"task is {task.status.value}")  # e.g. already retried
+    _post(db, action, task, render.failure_message(task), chat, purpose="failed", now=now)
 
 
 def _refresh_message(db, action, chat, now) -> None:
@@ -155,6 +162,7 @@ _HANDLERS = {
     "reminder": _reminder,
     "deadline": _deadline,
     "notify_cancel_result": _notify_cancel_result,
+    "notify_failed": _notify_failed,
     "refresh_message": _refresh_message,
 }
 
@@ -171,20 +179,32 @@ def _task(db: Session, action: models.ScheduledAction) -> models.BookingTask:
 
 def _post(
     db: Session,
+    action: models.ScheduledAction,
     task: models.BookingTask,
     message: OutgoingMessage,
     chat: ChatAdapter | None,
     *,
     purpose: str,
+    now: datetime,
 ) -> None:
+    """Send a booking update to every channel the owner uses: phone push and/or Discord."""
+
     settings = confirmation.effective_settings(db, task.booking_slot)
     destination = settings.destination
     if not settings.notifications_enabled:
         raise _Skip("notifications disabled")
-    if destination is None or not destination.discord_channel_id:
-        raise _Skip("no chat destination")
-    if chat is None:
-        raise _Skip("chat not configured")
+
+    # Push is best-effort and only sent on the first try, so a Discord retry doesn't repeat it.
+    pushed = 0
+    if not action.attempts:
+        pushed = push.send_to_user(
+            db, task.booking_slot.user_id, render.push_message(task, purpose, now=now)
+        )
+
+    if destination is None or not destination.discord_channel_id or chat is None:
+        if pushed:
+            return
+        raise _Skip("no chat destination or push subscription")
     posted = chat.send(destination.discord_channel_id, message)
     db.add(
         models.ChatMessage(

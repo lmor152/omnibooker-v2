@@ -304,12 +304,12 @@ export async function updateProvider(
 
 export async function testProviderCredentials(
   token: string,
-  payload: { type: string; credentials: { username: string; password: string } },
+  payload: { type: string; credentials: { username: string; password: string }; providerId?: number },
 ): Promise<{ success: boolean; message: string }> {
   const response = await fetch(`${API_BASE_URL}/providers/test`, {
     method: "POST",
     headers: buildHeaders(token, { "Content-Type": "application/json" }),
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ type: payload.type, credentials: payload.credentials, provider_id: payload.providerId }),
   });
   return handleResponse<{ success: boolean; message: string }>(response);
 }
@@ -366,8 +366,23 @@ export async function deleteBookingSlot(token: string, slotId: number): Promise<
   await handleResponse<undefined>(response);
 }
 
-export async function fetchBookingTasks(token: string): Promise<BookingTask[]> {
-  const response = await fetch(`${API_BASE_URL}/booking-tasks/`, {
+export interface BookingTaskQuery {
+  /** Only tasks scheduled at or after this time. */
+  from?: Date;
+  /** Only tasks scheduled before this time. */
+  to?: Date;
+  status?: BookingTask["status"][];
+  slotId?: number;
+}
+
+export async function fetchBookingTasks(token: string, query: BookingTaskQuery = {}): Promise<BookingTask[]> {
+  const params = new URLSearchParams();
+  if (query.from) params.set("from", query.from.toISOString());
+  if (query.to) params.set("to", query.to.toISOString());
+  query.status?.forEach((status) => params.append("status", status));
+  if (query.slotId != null) params.set("slot_id", String(query.slotId));
+  const search = params.toString();
+  const response = await fetch(`${API_BASE_URL}/booking-tasks/${search ? `?${search}` : ""}`, {
     headers: buildHeaders(token),
   });
   const data = await handleResponse<BookingTaskDto[]>(response);
@@ -519,4 +534,66 @@ export async function testChatDestination(token: string, destinationId: number):
     headers: buildHeaders(token),
   });
   await handleResponse<undefined>(response);
+}
+
+// --- Web Push -----------------------------------------------------------------------
+
+export interface PushDevice {
+  id: number;
+  endpoint: string;
+  userAgent?: string | null;
+  createdAt: string;
+  lastUsedAt?: string | null;
+}
+
+/** The server's VAPID public key, or null if push isn't set up there. */
+export async function fetchPushPublicKey(token: string): Promise<string | null> {
+  const response = await fetch(`${API_BASE_URL}/push/config`, { headers: buildHeaders(token) });
+  return (await handleResponse<{ public_key: string | null }>(response)).public_key;
+}
+
+export async function fetchPushDevices(token: string): Promise<PushDevice[]> {
+  const response = await fetch(`${API_BASE_URL}/push/subscriptions`, { headers: buildHeaders(token) });
+  const data = await handleResponse<
+    { id: number; endpoint: string; user_agent?: string | null; created_at: string; last_used_at?: string | null }[]
+  >(response);
+  return data.map((d) => ({
+    id: d.id,
+    endpoint: d.endpoint,
+    userAgent: d.user_agent,
+    createdAt: d.created_at,
+    lastUsedAt: d.last_used_at,
+  }));
+}
+
+export async function savePushSubscription(token: string, subscription: PushSubscription, label: string): Promise<void> {
+  const json = subscription.toJSON();
+  const response = await fetch(`${API_BASE_URL}/push/subscriptions`, {
+    method: "POST",
+    headers: buildHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, user_agent: label }),
+  });
+  await handleResponse<unknown>(response);
+}
+
+export async function removePushSubscription(token: string, endpoint: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/push/subscriptions/remove`, {
+    method: "POST",
+    headers: buildHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ endpoint }),
+  });
+  await handleResponse<undefined>(response);
+}
+
+export async function deletePushDevice(token: string, id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/push/subscriptions/${id}`, {
+    method: "DELETE",
+    headers: buildHeaders(token),
+  });
+  await handleResponse<undefined>(response);
+}
+
+export async function sendTestPush(token: string): Promise<number> {
+  const response = await fetch(`${API_BASE_URL}/push/test`, { method: "POST", headers: buildHeaders(token) });
+  return (await handleResponse<{ sent: number }>(response)).sent;
 }

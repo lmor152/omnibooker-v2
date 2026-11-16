@@ -16,7 +16,10 @@ interface ProviderManagerProps {
   onTestProvider: (payload: {
     type: string;
     credentials: { username: string; password: string };
+    providerId?: number;
   }) => Promise<{ success: boolean; message: string }>;
+  /** Open the "add provider" form on arrival. */
+  initialAdd?: boolean;
 }
 
 export function ProviderManager({
@@ -25,8 +28,9 @@ export function ProviderManager({
   onUpdateProvider,
   onDeleteProvider,
   onTestProvider,
+  initialAdd,
 }: ProviderManagerProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(Boolean(initialAdd));
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [deletingProvider, setDeletingProvider] = useState<Provider | null>(null);
 
@@ -142,9 +146,9 @@ function ProviderCard({
   };
 
   const [showDetails, setShowDetails] = useState(false);
-  const cardStatus = provider.credentials.cardDetails
-    ? "Card saved"
-    : provider.credentials.cardCvc
+  const cardStatus = provider.credentials.card
+    ? `Card ending ${provider.credentials.card.last4}`
+    : provider.credentials.hasCardCvc
       ? "Card CVC saved"
       : null;
 

@@ -89,7 +89,7 @@ export function NotificationSettingsSection({
             onChange={(event) => onChange({ confirmationPolicy: event.target.value as ConfirmationPolicy })}
           >
             <option value="owner_only">Only me</option>
-            <option value="anyone">Anyone in the channel</option>
+            <option value="anyone">Anyone linked in the channel (only you can cancel)</option>
           </NativeSelect>
         </Field>
 

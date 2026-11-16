@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
@@ -8,17 +8,40 @@ from ..database import get_db
 from ..security import get_current_active_user
 from ..services import confirmation
 from ..services.executor import BookingExecutionError, execute_booking_task
-from ..services.scheduler import sync_pending_tasks
+from ..services.scheduler import _calculate_attempt_at, sync_pending_tasks
 
 router = APIRouter(prefix="/booking-tasks", tags=["booking-tasks"])
 
 
 @router.get("/", response_model=list[schemas.BookingTaskRead])
 async def list_booking_tasks(
+    scheduled_from: datetime | None = Query(
+        None, alias="from", description="Only tasks scheduled at or after this time"
+    ),
+    scheduled_to: datetime | None = Query(
+        None, alias="to", description="Only tasks scheduled before this time"
+    ),
+    status_filter: list[models.TaskStatusEnum] | None = Query(None, alias="status"),
+    slot_id: int | None = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
-    return crud.get_booking_tasks(db, user_id=current_user.id)
+    return crud.get_booking_tasks(
+        db,
+        user_id=current_user.id,
+        scheduled_from=_as_utc(scheduled_from),
+        scheduled_to=_as_utc(scheduled_to),
+        statuses=status_filter,
+        slot_id=slot_id,
+    )
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 @router.get("/{task_id}", response_model=schemas.BookingTaskRead)
@@ -164,6 +187,7 @@ async def execute_task_now(
         task.error_message = str(exc)
         db.add(task)
         db.commit()
+        confirmation.on_booking_failure(db, task)
         if slot and slot.is_active:
             sync_pending_tasks(db, slot)
         raise HTTPException(
@@ -188,23 +212,34 @@ async def reactivate_booking_task(
             status_code=status.HTTP_404_NOT_FOUND, detail="Booking task not found"
         )
 
-    if task.status != models.TaskStatusEnum.cancelled:
+    # Cancelled tasks are "skipped" dates; failed tasks are retried the same way.
+    if task.status not in (models.TaskStatusEnum.cancelled, models.TaskStatusEnum.failed):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only cancelled tasks can be reactivated",
+            detail="Only cancelled or failed tasks can be reactivated",
         )
 
     # Check if the task is still in the future
     now = datetime.now(timezone.utc)
-    if task.scheduled_date.astimezone(timezone.utc) < now:
+    if _as_utc(task.scheduled_date) < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot reactivate a task scheduled in the past",
         )
 
-    # Reactivate the task
+    slot = task.booking_slot
+    if slot is None or not slot.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resume the session before reactivating its tasks",
+        )
+
+    # Back to pending with a fresh attempt time. If the booking window has already
+    # opened, the attempt is clamped to a minute from now so the worker retries soon.
     task.status = models.TaskStatusEnum.pending
     task.error_message = None
+    task.attempted_at = None
+    task.attempt_at = _calculate_attempt_at(slot, task.scheduled_date, reference=now)
     db.commit()
     db.refresh(task)
     return task

@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, close_all_sessions
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_omnibooker.db")
+# Provider credentials are encrypted at rest, so tests need a key.
+os.environ.setdefault("OMNIBOOKER_ENCRYPTION_KEY", "fWbqkx9cO8D8xwIcZbQJRaVEWDDVr0w9bUfTPkLOdvk=")
 
 from omnibooker_backend.database import (  # type: ignore[import-not-found]
     Base,
