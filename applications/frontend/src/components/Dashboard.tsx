@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { BookOpen, CalendarDays, CalendarSync, LogIn, LogOut, RefreshCw, Settings, Store } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { clearDataCache, DataProvider, useData } from "../app/data";
+import { PullToRefresh } from "../app/PullToRefresh";
 import { navigate, useRoute, type Route } from "../app/router";
 import { BookingsPage } from "../features/bookings/BookingsPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -121,6 +122,7 @@ function Shell({ isAuthenticated, userName, onLogin, onLogout, onExitPreview }: 
       </div>
 
       <BottomNav activeTab={activeTab} />
+      {isAuthenticated && <PullToRefresh onRefresh={data.refresh} />}
     </div>
   );
 }
